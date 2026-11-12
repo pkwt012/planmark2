@@ -283,6 +283,7 @@ function updatePager() {
   $("prevPage").disabled = state.pageIndex <= 0;
   $("nextPage").disabled = state.pageIndex >= state.doc.pageCount - 1;
   $("exportBtn").disabled = false;
+  $("reviseBtn").disabled = false;
   $("saveBtn").disabled = false;
   $("addBtn").disabled = false;
   $("legendBtn").disabled = false;
@@ -3054,6 +3055,11 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
     if (pending) {
       applyProject(pending);
       toast("Loaded the marks file onto this plan.");
+    } else if (info.project) {
+      applyProject(info.project, { quiet: true });
+      toast("Opened a revision file. The marks are editable.");
+    } else if (info.revisionWarning) {
+      toast(info.revisionWarning);
     } else {
       const raw = localStorage.getItem("planmarks:v1:" + info.id);
       if (raw) {
@@ -3142,25 +3148,32 @@ function loadProjectFile(file) {
   reader.readAsText(file);
 }
 
-async function exportPdf() {
+async function exportPdf(revise) {
   if (!state.doc) return;
-  const btn = $("exportBtn");
-  btn.disabled = true;
-  btn.textContent = "Exporting…";
+  const reviseBtn = $("reviseBtn");
+  const finalBtn = $("exportBtn");
+  reviseBtn.disabled = true;
+  finalBtn.disabled = true;
+  (revise ? reviseBtn : finalBtn).textContent = "Exporting…";
   try {
+    const body = {
+      placements: state.exportAllLayers ? state.placements : state.placements.filter(layerVisible),
+      ocg: state.exportAllLayers,
+      hiddenLayers: [...state.hiddenLayers],
+      showCircuits: state.showCircuits,
+    };
+    if (revise) {
+      body.revise = true;
+      body.project = projectData();
+    }
     const res = await fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        placements: state.exportAllLayers ? state.placements : state.placements.filter(layerVisible),
-        ocg: state.exportAllLayers,
-        hiddenLayers: [...state.hiddenLayers],
-        showCircuits: state.showCircuits,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await readError(res));
     const blob = await res.blob();
-    let name = state.doc.filename.replace(/\.pdf$/i, "") + "-marked.pdf";
+    let name = state.doc.filename.replace(/\.pdf$/i, "") + (revise ? "-revise.pdf" : "-marked.pdf");
     const disp = res.headers.get("Content-Disposition") || "";
     const star = /filename\*=UTF-8''([^;]+)/.exec(disp);
     if (star) name = decodeURIComponent(star[1]);
@@ -3169,8 +3182,10 @@ async function exportPdf() {
   } catch (err) {
     toast(err.message);
   } finally {
-    btn.disabled = !state.doc;
-    btn.textContent = "Export PDF";
+    reviseBtn.disabled = !state.doc;
+    finalBtn.disabled = !state.doc;
+    reviseBtn.textContent = "Export to revise";
+    finalBtn.textContent = "Export final";
   }
 }
 
@@ -3423,7 +3438,8 @@ function bind() {
     else delete p.freePlace;
     scheduleSave();
   });
-  $("exportBtn").addEventListener("click", () => exportPdf());
+  $("reviseBtn").addEventListener("click", () => exportPdf(true));
+  $("exportBtn").addEventListener("click", () => exportPdf(false));
   $("saveBtn").addEventListener("click", () => saveProject());
   $("loadBtn").addEventListener("click", () => $("fileProj").click());
   $("helpBtn").addEventListener("click", () => $("help").showModal());
