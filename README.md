@@ -1,0 +1,87 @@
+# Plan Marks
+
+Local tool for marking electrical symbols on PDF floor plans. The PDF never leaves this computer.
+
+Open a plan, click a symbol, then click the sheet. Drag a mark to move it, drag the amber handle to rotate it, and export a new PDF with the symbols drawn on top of the original sheet.
+
+## Windows
+
+Download [Plan Marks 2 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.0/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
+
+Windows may say it protected your PC, because the program is not signed. Choose More info, then Run anyway.
+
+## Run from source
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python run.py
+```
+
+On Windows, use `py -3` instead of `python3` for those commands. Then use the page that opens (by default [http://127.0.0.1:8765](http://127.0.0.1:8765)). Press Ctrl+C in the terminal to stop.
+
+To rebuild the Windows program on a Windows PC:
+
+```bat
+py -3 -m pip install -r requirements.txt pyinstaller
+py -3 -m PyInstaller packaging\planmarks.spec
+```
+
+The program is in `dist\PlanMarks\`.
+
+PyMuPDF is the only dependency. There is no account, no upload, and no network call except the browser talking to this local server.
+
+## Use
+
+- **Open PDF** loads one file. **Add sheets** appends every page from another PDF. **Legend** adds a sheet that lists every symbol with its name and description.
+- **Note** puts a short label on the sheet. Click where it should sit, then type. Drag it off to the side. The size slider changes the type size. A note is text, so it is left out of the symbol legend and the counts.
+- **Arrow** points at the work, the same way a dashed line is drawn. Click the tail, then click where the arrow points. The head is on the second point. Esc cancels that arrow, then puts the tool away. Drag the shaft to move it, or drag an amber end to change it.
+- **Dashed line** draws a switch leg between lights. Click the first point, then the next. It stays armed so you can draw another. An end snapped onto a symbol stays attached when that symbol moves. A blue end is attached. Drag that end off the symbol, or drag the line itself, to disconnect it. Deleting the symbol also releases the line. Esc cancels the segment, then puts the tool away.
+- **Light layout** draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line, and the symbol snaps onto it.
+- **White box** covers part of the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, and drag an amber corner to resize it. Export paints these rectangles before the symbols, so they cover the original sheet and the symbols stay on top. The original PDF is not changed.
+- **Snap to plan lines** pulls a new or dragged symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without that snap. A construction line still catches a symbol.
+- **Layers** are Power, Lighting, Low-volt, Circuitry, or a name you type on the selected mark. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. **Export all layers** writes each layer as a group you can turn on in the PDF. Hidden layers start off.
+- **Circuit** is an optional label on a symbol, dashed line, run, or note. **Circuits** in the header shows that label on the sheet. **Add schedule sheet** lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to, when it does not already have one.
+- **Floor plug**, **flood light**, **eave plug**, **patio heater**, and **floor heat** are in the symbol list.
+- **Generator** is a box marked GEN.
+- **Under cabinet 120V** and **LED tape light** are runs. Click one end, then the other. A solid line with end bars is drawn between the clicks, and 120V or TAPE sits under the line. The tool stays armed. Esc cancels the run, then puts it away.
+- **Apply size to all** copies the selected symbol’s size onto the other marks of that type. Choose this sheet or every sheet. Undo puts the old sizes back. Notes, arrows, dashed lines, legends, and runs are left alone.
+- **Counts** lists how many of each symbol are placed. Switch between this sheet and all sheets. **Add counts sheet** puts that list on a new page of the plan.
+- **Drop legend** places a key of every symbol on the current sheet. Drag it to a clear spot. The width slider scales it. The header **Legend** button still adds a full sheet with the longer descriptions.
+- **Try the sample plan** is a two-sheet house drawn at 1/4" = 1'-0", with a 10 ft dimension for calibration.
+- Click a palette symbol to arm it, then click the plan. Click the symbol again, or press Esc, to stop placing.
+- Drag to move. Drag the amber handle to rotate the whole symbol (Shift snaps to 15°). Letters turn with the symbol.
+- **Duplicate**, **Delete**, or the size slider edit the selected mark. Small / Medium / Large set a paper size. **1 ft** (after calibration) makes the symbol box one foot on the plan.
+- **Calibrate**: click two ends of a known length, enter that length, and Apply. The sample's living-room dimension is 10 feet.
+- **Export PDF** writes a new file. The original plan stays vector; symbols are vector too.
+- **Save** writes a JSON marks file. **Load** puts those marks back. The same PDF also restores marks automatically in this browser.
+
+Wheel zooms, and the zoom percentage is paper size (100% is actual size). Right-drag or Space-drag pans. Fit and the percentage button are in the header. The **?** button lists shortcuts.
+
+## Add a symbol
+
+Drop an SVG into `symbols/` and add an entry to `symbols/catalog.json`. A file with no catalog entry still shows up under Custom.
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g class="rot" fill="none" stroke="#141414" stroke-width="4" stroke-linecap="round">
+    <circle cx="50" cy="50" r="33" fill="#ffffff" stroke="none"/>
+    <circle cx="50" cy="50" r="24" fill="#ffffff"/>
+  </g>
+  <text class="label" x="50" y="58" text-anchor="middle"
+        font-family="Helvetica" font-size="22" font-weight="700" fill="#141414">X</text>
+</svg>
+```
+
+- `viewBox` must be `0 0 100 100`. The box is the symbol's size on the sheet.
+- Draw ink as `#141414`. White shapes are the knockout behind the symbol. The ink color is replaced when a mark is red, blue, green, or orange.
+- Include one `<g class="rot">`. The rotate handle turns the whole symbol around the center, 50, 50, including the letters.
+- Use double quotes on the `class` attribute. Restart the app after adding a file.
+
+Catalog fields: `id`, `name`, `category`, `file`, and optional `wall`, `keywords`, `hint`, `defaultColor`.
+
+## Check
+
+```bash
+.venv/bin/python tests/selftest.py
+```
