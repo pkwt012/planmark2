@@ -39,7 +39,8 @@
       <button type="button" id="addBtn" title="Append every sheet from another PDF" disabled>Add sheets</button>
       <button type="button" id="legendBtn" title="Append a sheet that lists every symbol and its description" disabled>Legend</button>
       <button type="button" id="circuitsBtn" title="Show circuit numbers next to symbols" aria-pressed="false">Circuits</button>
-      <button type="button" id="exportBtn" class="primary" disabled>Export PDF</button>
+      <button type="button" id="reviseBtn" disabled title="Save a PDF you can open again and keep editing. It also looks marked in other viewers.">Export to revise</button>
+      <button type="button" id="exportBtn" class="primary" disabled title="Draw the marks into a PDF to send out. Opening that file does not bring the marks back for editing.">Export final</button>
       <button type="button" id="saveBtn" disabled title="Save marks as a JSON file (Ctrl+S)">Save</button>
       <button type="button" id="loadBtn" title="Load a marks file">Load</button>
       <button type="button" id="helpBtn" title="Shortcuts" class="icon">?</button>
@@ -220,7 +221,7 @@
       <li>Drop legend places a key of every symbol on this sheet. Drag it where the crew can read it.</li>
       <li>Legend in the header adds a sheet with every symbol, its name, and a short description.</li>
       <li>Calibrate on a known dimension (the sample has a 10 ft line) so size can be read in feet.</li>
-      <li>Export PDF draws the symbols on top of the original sheet. The plan stays vector.</li>
+      <li>Export to revise writes a marked PDF you can open again and keep editing. Export final draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing.</li>
     </ul>
     <h3>Shortcuts</h3>
     <ul class="keys">

@@ -6,7 +6,7 @@ Open a plan, click a symbol, then click the sheet. Drag a mark to move it, drag 
 
 ## Windows
 
-Download [Plan Marks 2 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.0/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
+Download [Plan Marks 2.1 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.1/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
 
 Windows may say it protected your PC, because the program is not signed. Choose More info, then Run anyway.
 
@@ -53,7 +53,7 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - Drag to move. Drag the amber handle to rotate the whole symbol (Shift snaps to 15°). Letters turn with the symbol.
 - **Duplicate**, **Delete**, or the size slider edit the selected mark. Small / Medium / Large set a paper size. **1 ft** (after calibration) makes the symbol box one foot on the plan.
 - **Calibrate**: click two ends of a known length, enter that length, and Apply. The sample's living-room dimension is 10 feet.
-- **Export PDF** writes a new file. The original plan stays vector; symbols are vector too.
+- **Export to revise** writes a marked PDF you can open again and keep editing. **Export final** draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing. The original plan stays vector; symbols are vector too.
 - **Save** writes a JSON marks file. **Load** puts those marks back. The same PDF also restores marks automatically in this browser.
 
 Wheel zooms, and the zoom percentage is paper size (100% is actual size). Right-drag or Space-drag pans. Fit and the percentage button are in the header. The **?** button lists shortcuts.

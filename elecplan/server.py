@@ -15,7 +15,14 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import pymupdf
 
 from elecplan.counts import build_counts_pdf, parse_count_rows
-from elecplan.export import clean_layer_list, export_pdf, parse_placements, symbol_layer
+from elecplan.export import (
+    REVISE_MARKS,
+    REVISE_SOURCE,
+    clean_layer_list,
+    export_pdf,
+    parse_placements,
+    symbol_layer,
+)
 from elecplan.legend import build_legend_pdf, legend_layout
 from elecplan.schedule import build_schedule_pdf, parse_schedule_rows
 from elecplan.library import load_symbols, project_root
@@ -54,9 +61,37 @@ def _safe_name(name: str) -> str:
     return name[:180]
 
 
-def _marked_name(filename: str) -> str:
+def _export_name(filename: str, revise: bool) -> str:
     base = filename[:-4] if filename.lower().endswith(".pdf") else filename
-    return f"{base}-marked.pdf"
+    return f"{base}-revise.pdf" if revise else f"{base}-marked.pdf"
+
+
+def _revision_project(raw) -> dict:
+    if not isinstance(raw, dict) or raw.get("app") != "plan-marks" or raw.get("version") != 1:
+        raise ValueError("A revision export needs the marks")
+    if not isinstance(raw.get("placements"), list):
+        raise ValueError("A revision export needs the marks")
+    return raw
+
+
+def _read_revision(doc: pymupdf.Document):
+    """Return (project, source bytes), 'damaged', or None for a plain PDF."""
+    names = set(doc.embfile_names() or [])
+    has_marks = REVISE_MARKS in names
+    has_source = REVISE_SOURCE in names
+    if not has_marks and not has_source:
+        return None
+    if not has_marks or not has_source:
+        return "damaged"
+    try:
+        project = json.loads(doc.embfile_get(REVISE_MARKS).decode("utf-8"))
+        source = doc.embfile_get(REVISE_SOURCE)
+        _revision_project(project)
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, RuntimeError):
+        return "damaged"
+    if not isinstance(source, (bytes, bytearray)) or not bytes(source).startswith(b"%PDF"):
+        return "damaged"
+    return project, bytes(source)
 
 
 def _content_disposition(filename: str) -> str:
@@ -110,6 +145,7 @@ class Session:
             raise ValueError("That file is empty")
         if len(data) > MAX_PDF_BYTES:
             raise ValueError("That PDF is larger than 80 MB")
+        extra: dict = {}
         with _FITZ:
             try:
                 doc = pymupdf.open(stream=data, filetype="pdf")
@@ -121,8 +157,36 @@ class Session:
             if doc.page_count < 1:
                 doc.close()
                 raise ValueError("This PDF has no pages")
-            self._remember(doc, data, _safe_name(filename))
-        return self.info()
+            revision = _read_revision(doc)
+            if revision == "damaged":
+                self._remember(doc, data, _safe_name(filename))
+                extra["revisionWarning"] = (
+                    "This file looks like a revision export, but the marks could not be read. "
+                    "It was opened as a plain plan."
+                )
+            elif isinstance(revision, tuple):
+                project, source = revision
+                doc.close()
+                if len(source) > MAX_PDF_BYTES:
+                    raise ValueError("That PDF is larger than 80 MB")
+                try:
+                    clean = pymupdf.open(stream=source, filetype="pdf")
+                except Exception as exc:
+                    raise ValueError("Could not open that file as a PDF") from exc
+                if clean.needs_pass and not clean.authenticate(""):
+                    clean.close()
+                    raise ValueError("This PDF is password-protected. Remove the password and try again.")
+                if clean.page_count < 1:
+                    clean.close()
+                    raise ValueError("This PDF has no pages")
+                inner_name = project.get("pdfName") if isinstance(project.get("pdfName"), str) else ""
+                self._remember(clean, source, _safe_name(inner_name or filename))
+                extra["project"] = project
+            else:
+                self._remember(doc, data, _safe_name(filename))
+        info = self.info()
+        info.update(extra)
+        return info
 
     def append_pdf(self, data: bytes) -> dict:
         if self.doc is None or self.data is None:
@@ -273,9 +337,20 @@ class Session:
                 self.cache.popitem(last=False)
             return data
 
-    def export(self, placements, symbols_by_id, ocg=False, hidden_layers=None, show_circuits=False) -> tuple[bytes, str]:
+    def export(
+        self,
+        placements,
+        symbols_by_id,
+        ocg=False,
+        hidden_layers=None,
+        show_circuits=False,
+        revise=False,
+        project=None,
+    ) -> tuple[bytes, str]:
         if self.data is None or self.doc is None:
             raise ValueError("No PDF is open")
+        if revise:
+            project = _revision_project(project)
         run_ids = {sid for sid, sym in symbols_by_id.items() if sym.get("place") == "run"}
         parsed = parse_placements(placements, self.doc.page_count, set(symbols_by_id), run_ids)
         with _FITZ:
@@ -286,8 +361,12 @@ class Session:
                 ocg=ocg,
                 hidden_layers=hidden_layers,
                 show_circuits=show_circuits,
+                revise=revise,
+                project=project,
             )
-        return pdf, _marked_name(self.filename)
+        if revise and len(pdf) > MAX_PDF_BYTES:
+            raise ValueError("This revision file would be larger than 80 MB. Use Export final for this plan.")
+        return pdf, _export_name(self.filename, revise)
 
 
 class App:
@@ -460,12 +539,15 @@ def _make_handler(app: App):
                     payload = json.loads(body.decode("utf-8") or "{}")
                     if not isinstance(payload, dict):
                         raise ValueError("export must be an object")
+                    revise = payload.get("revise") is True
                     pdf, name = app.session.export(
                         payload.get("placements", []),
                         app.symbols_by_id,
                         ocg=payload.get("ocg") is True,
                         hidden_layers=clean_layer_list(payload.get("hiddenLayers")),
                         show_circuits=payload.get("showCircuits") is True,
+                        revise=revise,
+                        project=payload.get("project") if revise else None,
                     )
                 except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                     self._json(400, {"error": str(exc)})

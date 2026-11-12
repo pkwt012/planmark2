@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 
 import pymupdf
 
 from elecplan.library import prepare_svg
+
+REVISE_MARKS = "plan-marks.json"
+REVISE_SOURCE = "plan-marks-source.pdf"
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -536,6 +540,8 @@ def export_pdf(
     ocg: bool = False,
     hidden_layers: list[str] | None = None,
     show_circuits: bool = False,
+    revise: bool = False,
+    project: dict | None = None,
 ) -> bytes:
     """Return a new PDF with each placement drawn on top of the original page.
 
@@ -545,6 +551,8 @@ def export_pdf(
     "legend", or "whitebox". White rectangles are drawn first, so they cover
     the original sheet and the symbols stay on top. The source bytes are not
     modified. When ocg is set, each layer is an optional content group.
+    A revision file also carries the unmarked PDF and the marks, so Plan Marks
+    can open it and keep the marks editable.
     """
     hidden = set(hidden_layers or [])
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
@@ -650,6 +658,21 @@ def export_pdf(
             page.show_pdf_page(rect, src, 0, overlay=True, keep_proportion=True, oc=oc)
             if show_circuits and item.get("circuit"):
                 _draw_circuit_tag(page, x + size / 2 + 2, y - size / 2 + 7, item["circuit"], oc)
+        if revise:
+            if not isinstance(project, dict):
+                raise ValueError("A revision export needs the marks")
+            doc.embfile_add(
+                REVISE_MARKS,
+                json.dumps(project, ensure_ascii=False).encode("utf-8"),
+                filename=REVISE_MARKS,
+                desc="Plan Marks marks",
+            )
+            doc.embfile_add(
+                REVISE_SOURCE,
+                pdf_bytes,
+                filename=REVISE_SOURCE,
+                desc="Unmarked plan",
+            )
         return doc.tobytes(deflate=True, garbage=3)
     finally:
         for src in cache.values():

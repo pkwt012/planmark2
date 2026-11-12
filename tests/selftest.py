@@ -19,7 +19,7 @@ from elecplan.export import export_pdf, parse_placements
 from elecplan.legend import build_legend_block, build_legend_pdf, legend_layout
 from elecplan.library import load_symbols, prepare_svg
 from elecplan.sample_plan import build_sample_pdf
-from elecplan.server import App, make_server
+from elecplan.server import App, Session, make_server
 
 PASS = 0
 FAIL = 0
@@ -953,6 +953,115 @@ def main():
     check("grouped export still draws the visible symbol", dark_pixels(ocg_pix, 30, 30, 52, 52) > 0)
     ocg_doc.close()
 
+    print("revision export")
+    revise_project = {
+        "app": "plan-marks",
+        "version": 1,
+        "pdfName": "room.pdf",
+        "pdfId": "room",
+        "defaultSize": 28,
+        "calibration": None,
+        "hiddenLayers": ["Lighting"],
+        "showCircuits": False,
+        "placements": [
+            {
+                "id": "s1",
+                "kind": "symbol",
+                "symbolId": "duplex",
+                "page": 0,
+                "x": 40,
+                "y": 40,
+                "size": 28,
+                "rotation": 0,
+                "color": "#141414",
+                "layer": "Power",
+            },
+            {
+                "id": "s2",
+                "kind": "symbol",
+                "symbolId": "ceiling",
+                "page": 0,
+                "x": 120,
+                "y": 40,
+                "size": 28,
+                "rotation": 0,
+                "color": "#141414",
+                "layer": "Lighting",
+            },
+        ],
+    }
+    final_pdf = export_pdf(plain_bytes, [revise_project["placements"][0]], by_id)
+    final_doc = pymupdf.open(stream=final_pdf, filetype="pdf")
+    check("final export has no embedded marks", final_doc.embfile_count() == 0)
+    final_pix = final_doc[0].get_pixmap(dpi=72, alpha=False)
+    check("final export draws the symbol", dark_pixels(final_pix, 30, 30, 52, 52) > 0)
+    final_doc.close()
+    revised = export_pdf(
+        plain_bytes,
+        list(revise_project["placements"]),
+        by_id,
+        hidden_layers=["Lighting"],
+        revise=True,
+        project=revise_project,
+    )
+    revised_doc = pymupdf.open(stream=revised, filetype="pdf")
+    check(
+        "revision file carries the marks and the unmarked plan",
+        set(revised_doc.embfile_names()) == {"plan-marks.json", "plan-marks-source.pdf"},
+        str(revised_doc.embfile_names()),
+    )
+    revised_pix = revised_doc[0].get_pixmap(dpi=72, alpha=False)
+    check("revision file looks marked", dark_pixels(revised_pix, 30, 30, 52, 52) > 0)
+    check("revision stamp omits the hidden layer", dark_pixels(revised_pix, 108, 28, 134, 54) == 0)
+    source_doc = pymupdf.open(stream=revised_doc.embfile_get("plan-marks-source.pdf"), filetype="pdf")
+    source_pix = source_doc[0].get_pixmap(dpi=72, alpha=False)
+    check("embedded plan has no burned symbol", dark_pixels(source_pix, 30, 30, 52, 52) == 0)
+    check("embedded plan is not itself a revision file", source_doc.embfile_count() == 0)
+    source_doc.close()
+    stored_marks = json.loads(revised_doc.embfile_get("plan-marks.json"))
+    check(
+        "revision keeps the hidden mark",
+        stored_marks.get("version") == 1
+        and any(item.get("symbolId") == "ceiling" for item in stored_marks["placements"]),
+    )
+    revised_doc.close()
+    revise_session = Session()
+    opened_revise = revise_session.open_pdf(revised, "room-revise.pdf")
+    check(
+        "opening a revision file restores the marks",
+        opened_revise["filename"] == "room.pdf"
+        and opened_revise["project"]["placements"][1]["symbolId"] == "ceiling"
+        and "project" in opened_revise,
+    )
+    reopened_pix = revise_session.doc[0].get_pixmap(dpi=72, alpha=False)
+    check("reopened revision sheet is unmarked", dark_pixels(reopened_pix, 30, 30, 52, 52) == 0)
+    again, again_name = revise_session.export(
+        [opened_revise["project"]["placements"][0]],
+        by_id,
+        hidden_layers=["Lighting"],
+        revise=True,
+        project=opened_revise["project"],
+    )
+    again_doc = pymupdf.open(stream=again, filetype="pdf")
+    inner = pymupdf.open(stream=again_doc.embfile_get("plan-marks-source.pdf"), filetype="pdf")
+    check(
+        "a second revision does not nest",
+        again_doc.embfile_count() == 2 and inner.embfile_count() == 0 and again_name == "room-revise.pdf",
+    )
+    inner.close()
+    again_doc.close()
+    broken = pymupdf.open()
+    broken.new_page(width=200, height=200)
+    broken.embfile_add("plan-marks.json", b"{}", filename="plan-marks.json")
+    broken_bytes = broken.tobytes()
+    broken.close()
+    damaged = Session().open_pdf(broken_bytes, "broken.pdf")
+    check(
+        "damaged revision opens as a plain plan",
+        "project" not in damaged and "could not be read" in damaged.get("revisionWarning", ""),
+        str(damaged.get("revisionWarning")),
+    )
+
     from elecplan.schedule import build_schedule_pdf, parse_schedule_rows
 
     schedule_rows = parse_schedule_rows(
@@ -992,6 +1101,7 @@ def main():
     check("home page", status == 200 and b"Plan Marks" in body, str(status))
     check("layout help is a construction line", b"construction rectangle" in body)
     check("white box tool is on the page", b"White box" in body and b"Add schedule sheet" in body)
+    check("export choices are on the page", b"Export to revise" in body and b"Export final" in body)
     status, _headers, body = request(base, "/static/app.js")
     check(
         "script",
@@ -1246,6 +1356,24 @@ def main():
         schedule_api_text[:240],
     )
     schedule_api_doc.close()
+
+    status, _headers, body = request(base, "/api/open?name=room-revise.pdf", data=revised, method="POST")
+    opened_http = json.loads(body)
+    check(
+        "open revision over http",
+        status == 200
+        and opened_http.get("filename") == "room.pdf"
+        and opened_http.get("project", {}).get("placements", [{}, {}])[1].get("symbolId") == "ceiling",
+        body[:240],
+    )
+    status, _headers, body = request(
+        base,
+        "/api/export",
+        data=b'{"revise":true,"placements":[]}',
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    check("revision export needs the marks", status == 400, body[:160])
 
     status, _headers, body = request(base, "/api/sample.pdf")
     check("sample endpoint", status == 200 and body.startswith(b"%PDF"))
