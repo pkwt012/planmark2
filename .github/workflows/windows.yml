@@ -66,18 +66,18 @@ jobs:
           path: PlanMarks-Windows.zip
 
       - name: Publish the download
-        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.1')) }}"
+        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.2')) }}"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1
-          name: Plan Marks 2.1
+          tag_name: v2.2
+          name: Plan Marks 2.2
           make_latest: "true"
           files: PlanMarks-Windows.zip
           body: |
-            Plan Marks 2.1. Unzip the folder, then double-click PlanMarks.exe.
+            Plan Marks 2.2. Unzip the folder, then double-click PlanMarks.exe.
             Leave the small Plan Marks window open while you work. Close it to quit.
             Keep PlanMarks.exe and the _internal folder together.
             Your PDFs stay on this computer.
             If Windows says it protected your PC, choose More info, then Run anyway.
 
-            Export to revise writes a marked PDF you can open again and keep editing. Export final is the copy to send out.
+            When only one layer is checked, new marks go on that layer. The note, arrow, and dashed-line buttons scroll with the side panel.

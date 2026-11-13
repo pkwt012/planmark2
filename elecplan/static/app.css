@@ -309,12 +309,7 @@ header button.active {
 }
 .run-label { cursor: grab; }
 .tool-rows {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   margin: 0 0 10px;
-  padding-bottom: 2px;
-  background: #15181e;
 }
 .tool-row { display: flex; gap: 6px; margin: 0 0 6px; }
 .tool-rows .tool-row:last-child { margin-bottom: 0; }

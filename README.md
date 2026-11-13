@@ -6,7 +6,7 @@ Open a plan, click a symbol, then click the sheet. Drag a mark to move it, drag 
 
 ## Windows
 
-Download [Plan Marks 2.1 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.1/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
+Download [Plan Marks 2.2 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.2/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
 
 Windows may say it protected your PC, because the program is not signed. Choose More info, then Run anyway.
 
@@ -40,7 +40,7 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Light layout** draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line, and the symbol snaps onto it.
 - **White box** covers part of the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, and drag an amber corner to resize it. Export paints these rectangles before the symbols, so they cover the original sheet and the symbols stay on top. The original PDF is not changed.
 - **Snap to plan lines** pulls a new or dragged symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without that snap. A construction line still catches a symbol.
-- **Layers** are Power, Lighting, Low-volt, Circuitry, or a name you type on the selected mark. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. **Export all layers** writes each layer as a group you can turn on in the PDF. Hidden layers start off.
+- **Layers** are Power, Lighting, Low-volt, Circuitry, or a name you type on the selected mark. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new marks go on that layer. **Export all layers** writes each layer as a group you can turn on in the PDF. Hidden layers start off.
 - **Circuit** is an optional label on a symbol, dashed line, run, or note. **Circuits** in the header shows that label on the sheet. **Add schedule sheet** lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to, when it does not already have one.
 - **Floor plug**, **flood light**, **eave plug**, **patio heater**, and **floor heat** are in the symbol list.
 - **Generator** is a box marked GEN.

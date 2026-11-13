@@ -1111,6 +1111,7 @@ def main():
         and b"function followAnchors" in body
         and b"function layoutClick" in body
         and b"function whiteboxClick" in body
+        and b"function placeLayer" in body
         and b"function snapToUnderlay" in body
         and b"function snapToGuide" in body
         and b"guide: true" in body

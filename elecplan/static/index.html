@@ -153,7 +153,7 @@
           <label class="check-line layer-export" title="Write every layer into the PDF as a group you can turn on or off. Hidden layers start off.">
             <input type="checkbox" id="exportLayers"> Export all layers
           </label>
-          <p class="hint">Hidden layers leave the sheet, the counts, and the legend.</p>
+          <p class="hint">Hidden layers leave the sheet, the counts, and the legend. When only one layer is checked, new marks go on that layer.</p>
         </details>
         <details id="countsPanel" class="counts">
           <summary>Counts</summary>
@@ -213,7 +213,7 @@
       <li>Light layout draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line to put it on the rectangle.</li>
       <li>White box covers the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, or drag an amber corner to resize it. Export paints these first, so they cover the original sheet and the symbols stay on top. The original PDF is not changed.</li>
       <li>Snap to plan lines pulls a symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without snapping.</li>
-      <li>Layers are Power, Lighting, Low-volt, Circuitry, or a name you type. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. Export all layers writes each layer as a group in the PDF.</li>
+      <li>Layers are Power, Lighting, Low-volt, Circuitry, or a name you type. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new symbols, dashed lines, and other marks go on that layer. Export all layers writes each layer as a group in the PDF.</li>
       <li>Circuit is an optional label. Circuits in the header shows it next to the symbol. Add schedule sheet lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to when it does not already have one.</li>
       <li>Under cabinet 120V and LED tape light are runs. Click one end, then the other. The words sit under the line. Esc cancels that run.</li>
       <li>Apply size to all copies the selected symbol’s size onto the other marks of that type. This sheet only is the usual choice. All sheets covers the whole plan.</li>
