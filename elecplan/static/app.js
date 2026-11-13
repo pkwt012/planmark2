@@ -443,6 +443,12 @@ function defaultLayer(kind, symbolId, guide) {
   return "Power";
 }
 
+function placeLayer(kind, symbolId, guide) {
+  const visible = layerNames().filter((name) => !state.hiddenLayers.has(name));
+  if (visible.length === 1) return visible[0];
+  return defaultLayer(kind, symbolId, guide);
+}
+
 function normalizeLayer(value, fallback) {
   if (typeof value !== "string") return fallback;
   const name = value.replace(/\s+/g, " ").trim();
@@ -2083,7 +2089,7 @@ function placeAt(cx, cy, shift) {
     size: state.defaultSize,
     rotation: 0,
     color: state.ink || sym.defaultColor || "#141414",
-    layer: defaultLayer("symbol", sym.id),
+    layer: placeLayer("symbol", sym.id),
   };
   state.placements.push(mark);
   state.selectedId = mark.id;
@@ -2431,7 +2437,7 @@ function layoutClick(pt, shift) {
       a1: null,
       a2: null,
       guide: true,
-      layer: "Lighting",
+      layer: placeLayer("line", null, true),
     });
   }
   state.layoutDraft = null;
@@ -2496,7 +2502,7 @@ function whiteboxClick(pt, shift) {
     y1: state.whiteboxDraft.y1,
     x2,
     y2,
-    layer: "Power",
+    layer: placeLayer("whitebox"),
   };
   state.placements.push(mark);
   state.selectedId = mark.id;
@@ -2563,7 +2569,7 @@ function segmentClick(pt, kind) {
     mark.a1 = draft.a1 || null;
     mark.a2 = snapped.anchorId || null;
   }
-  mark.layer = defaultLayer(kind, mark.symbolId, false);
+  mark.layer = placeLayer(kind, mark.symbolId, false);
   if (kind === "line" || kind === "run") {
     const inherited = circuitFromAnchor(snapped.anchorId) || circuitFromAnchor(draft.anchorStart);
     if (inherited) mark.circuit = inherited;
@@ -2598,7 +2604,7 @@ function placeNote(pt) {
     text: "Note",
     size: state.noteSize || 12,
     color: state.ink || "#141414",
-    layer: "Power",
+    layer: placeLayer("note"),
   };
   state.placements.push(mark);
   state.selectedId = mark.id;
@@ -2637,7 +2643,7 @@ function placeLegend(pt) {
   const x = clamp(pt.x, 8, Math.max(8, page.width - width - 8));
   const y = clamp(pt.y, 8, Math.max(8, page.height - height - 8));
   pushUndo();
-  const mark = { id: uid(), kind: "legend", page: state.pageIndex, x, y, width, layer: "Power" };
+  const mark = { id: uid(), kind: "legend", page: state.pageIndex, x, y, width, layer: placeLayer("legend") };
   state.placements.push(mark);
   state.selectedId = mark.id;
   state.tool = null;
