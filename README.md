@@ -6,7 +6,7 @@ Open a plan, click a symbol, then click the sheet. Drag a mark to move it, drag 
 
 ## Windows
 
-Download [Plan Marks 2.2 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.2/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
+Download [Plan Marks 2.3 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.3/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
 
 Windows may say it protected your PC, because the program is not signed. Choose More info, then Run anyway.
 
@@ -36,7 +36,8 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Open PDF** loads one file. **Add sheets** appends every page from another PDF. **Legend** adds a sheet that lists every symbol with its name and description.
 - **Note** puts a short label on the sheet. Click where it should sit, then type. Drag it off to the side. The size slider changes the type size. A note is text, so it is left out of the symbol legend and the counts.
 - **Arrow** points at the work, the same way a dashed line is drawn. Click the tail, then click where the arrow points. The head is on the second point. Esc cancels that arrow, then puts the tool away. Drag the shaft to move it, or drag an amber end to change it.
-- **Dashed line** draws a switch leg between lights. Click the first point, then the next. It stays armed so you can draw another. An end snapped onto a symbol stays attached when that symbol moves. A blue end is attached. Drag that end off the symbol, or drag the line itself, to disconnect it. Deleting the symbol also releases the line. Esc cancels the segment, then puts the tool away.
+- **Dashed line** draws a switch leg between lights. Click the first point, then the next. It stays armed so you can draw another. An end snapped onto a symbol stays attached when that symbol moves. A blue end is attached. Drag that end off the symbol, or drag the line itself, to disconnect it. Deleting the symbol also releases the line. Esc cancels the segment, then puts the tool away. Where a dashed line or a run crosses another, the one drawn later hops over it.
+- **Group switches** packs two to five nearby switches into one multi-gang box, about 0.6 of a symbol apart. Shift-click each switch, then Group switches. Each switch still takes its own dashed line. Dragging one moves the box. Ungroup separates them.
 - **Light layout** draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line, and the symbol snaps onto it.
 - **White box** covers part of the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, and drag an amber corner to resize it. Export paints these rectangles before the symbols, so they cover the original sheet and the symbols stay on top. The original PDF is not changed.
 - **Snap to plan lines** pulls a new or dragged symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without that snap. A construction line still catches a symbol.
@@ -50,11 +51,11 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Drop legend** places a key of every symbol on the current sheet. Drag it to a clear spot. The width slider scales it. The header **Legend** button still adds a full sheet with the longer descriptions.
 - **Try the sample plan** is a two-sheet house drawn at 1/4" = 1'-0", with a 10 ft dimension for calibration.
 - Click a palette symbol to arm it, then click the plan. Click the symbol again, or press Esc, to stop placing.
-- Drag to move. Drag the amber handle to rotate the whole symbol (Shift snaps to 15°). Letters turn with the symbol.
+- Drag to move. Drag the amber handle to rotate the whole symbol (Shift snaps to 15°). Letters turn with the symbol. A symbol is clicked in its center, about 65% of the box. Click the same spot again to select the next symbol when those centers overlap.
 - **Duplicate**, **Delete**, or the size slider edit the selected mark. Small / Medium / Large set a paper size. **1 ft** (after calibration) makes the symbol box one foot on the plan.
 - **Calibrate**: click two ends of a known length, enter that length, and Apply. The sample's living-room dimension is 10 feet.
 - **Export to revise** writes a marked PDF you can open again and keep editing. **Export final** draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing. The original plan stays vector; symbols are vector too.
-- **Save** writes a JSON marks file. **Load** puts those marks back. The same PDF also restores marks automatically in this browser.
+- **Save** writes a JSON marks file. **Load** puts those marks back. The same PDF also restores marks automatically in this browser. About every 75 seconds, and when the tab closes, a copy is written in the `planmarks-recovery` folder next to the program (or the project folder when you run from source). Opening that plan offers to restore a newer copy. Export writes a recovery file first. That JSON loads with **Load**.
 
 Wheel zooms, and the zoom percentage is paper size (100% is actual size). Right-drag or Space-drag pans. Fit and the percentage button are in the header. The **?** button lists shortcuts.
 

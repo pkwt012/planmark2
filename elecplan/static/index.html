@@ -142,6 +142,10 @@
               <button type="button" id="rot0">0°</button>
             </div>
           </div>
+          <div class="row" id="groupRow" hidden>
+            <button type="button" id="groupBtn" title="Pack the selected switches into one multi-gang box">Group switches</button>
+            <button type="button" id="ungroupBtn" title="Separate this multi-gang box">Ungroup</button>
+          </div>
           <div class="row">
             <button type="button" id="dupBtn" title="Duplicate (Ctrl+D)">Duplicate</button>
             <button type="button" id="delBtn" class="danger" title="Delete (Del)">Delete</button>
@@ -190,6 +194,11 @@
         </div>
       </div>
       <div id="veil" hidden>Opening plan…</div>
+      <div id="recoverBar" hidden>
+        <span id="recoverText"></span>
+        <button type="button" id="recoverYes" class="primary">Restore</button>
+        <button type="button" id="recoverNo">Dismiss</button>
+      </div>
       <div id="toast" hidden role="status"></div>
     </main>
 
@@ -197,6 +206,7 @@
       <span id="statusLeft"></span>
       <span id="statusMid"></span>
       <span id="statusRight"></span>
+      <span id="statusSave"></span>
     </footer>
   </div>
 
@@ -205,11 +215,14 @@
     <ul>
       <li>Click a symbol, then click the sheet to place it. Click the symbol again to put the tool away.</li>
       <li>Drag a mark to move it. Drag the amber handle to rotate the whole symbol. Hold Shift to snap to 15°.</li>
+      <li>A symbol is clicked in its center, about 65% of the box. The drawing and the amber handle stay full size. Click the same spot again to select the next symbol when those centers still overlap.</li>
       <li>Letters turn with the symbol. Drag the dividers to resize the symbol list and the tools.</li>
       <li>Click a category name to show or hide its symbols.</li>
       <li>Note places a short label on the sheet. Click where it should sit, then type it. Drag it off to the side. A note is text, so it is left out of the symbol legend and the counts.</li>
       <li>Arrow points at the work. Click the first point, then click where the arrow points. Esc cancels that arrow.</li>
       <li>Dashed line connects lights. Click the first point, then the next. An end snapped to a symbol stays there when the symbol moves. A blue end is attached. Drag that end away, or drag the line, to disconnect it. Esc cancels the segment.</li>
+      <li>Where a dashed line or a run crosses another, the one drawn later hops over it with a small jump. The hop moves when you move either line.</li>
+      <li>Shift-click two to five nearby switches, then Group switches. They pack tightly, about 0.6 of a symbol apart, and each switch still takes its own dashed line. Dragging one moves the whole box. Ungroup separates them.</li>
       <li>Light layout draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line to put it on the rectangle.</li>
       <li>White box covers the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, or drag an amber corner to resize it. Export paints these first, so they cover the original sheet and the symbols stay on top. The original PDF is not changed.</li>
       <li>Snap to plan lines pulls a symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without snapping.</li>
@@ -221,7 +234,8 @@
       <li>Drop legend places a key of every symbol on this sheet. Drag it where the crew can read it.</li>
       <li>Legend in the header adds a sheet with every symbol, its name, and a short description.</li>
       <li>Calibrate on a known dimension (the sample has a 10 ft line) so size can be read in feet.</li>
-      <li>Export to revise writes a marked PDF you can open again and keep editing. Export final draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing.</li>
+      <li>Export to revise writes a marked PDF you can open again and keep editing. Export final draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing. A recovery copy is written just before either export.</li>
+      <li>Marks are saved in this browser, and about every 75 seconds as a JSON file in the planmarks-recovery folder next to the program (or the project folder when you run from source). Closing the tab writes that file too. Opening the same plan offers to restore a newer recovery. Load can open that JSON as well.</li>
     </ul>
     <h3>Shortcuts</h3>
     <ul class="keys">
