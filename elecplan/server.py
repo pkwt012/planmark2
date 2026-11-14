@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import threading
 import traceback
+from datetime import datetime, timezone
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,6 +32,8 @@ from elecplan.sample_plan import build_sample_pdf
 
 STATIC = project_root() / "elecplan" / "static"
 MAX_PDF_BYTES = 80 * 1024 * 1024
+MAX_RECOVERY_BYTES = 8 * 1024 * 1024
+_PDF_ID = re.compile(r"^[0-9a-f]{16}$")
 _PAGE_PATH = re.compile(r"/api/page/(\d+)\.png")
 _FITZ = threading.Lock()
 
@@ -64,6 +68,46 @@ def _safe_name(name: str) -> str:
 def _export_name(filename: str, revise: bool) -> str:
     base = filename[:-4] if filename.lower().endswith(".pdf") else filename
     return f"{base}-revise.pdf" if revise else f"{base}-marked.pdf"
+
+
+def recovery_dir() -> Path:
+    """Folder of JSON recovery files. Next to the program, or the project folder."""
+    if getattr(sys, "frozen", False):
+        folder = Path(sys.executable).resolve().parent / "planmarks-recovery"
+    else:
+        folder = project_root() / "planmarks-recovery"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def save_recovery(payload: dict) -> dict:
+    if not isinstance(payload, dict) or payload.get("app") != "plan-marks" or payload.get("version") != 1:
+        raise ValueError("That file is not a Plan Marks project.")
+    pdf_id = payload.get("pdfId")
+    if not isinstance(pdf_id, str) or not _PDF_ID.fullmatch(pdf_id):
+        raise ValueError("This plan has no id to recover.")
+    stored = dict(payload)
+    stored["savedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    text = json.dumps(stored, ensure_ascii=False, indent=2)
+    if len(text.encode("utf-8")) > MAX_RECOVERY_BYTES:
+        raise ValueError("That recovery file is too large.")
+    path = recovery_dir() / f"{pdf_id}.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+    return {"savedAt": stored["savedAt"], "file": path.name, "folder": "planmarks-recovery"}
+
+
+def load_recovery(pdf_id: str) -> dict | None:
+    if not isinstance(pdf_id, str) or not _PDF_ID.fullmatch(pdf_id):
+        raise ValueError("bad id")
+    path = recovery_dir() / f"{pdf_id}.json"
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("app") != "plan-marks":
+        return None
+    return data
 
 
 def _revision_project(raw) -> dict:
@@ -447,6 +491,18 @@ def _make_handler(app: App):
                 except ValueError as exc:
                     self._json(400, {"error": str(exc)})
                 return
+            if path == "/api/recover":
+                pdf_id = query.get("id", [""])[0]
+                try:
+                    data = load_recovery(pdf_id)
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+                if data is None:
+                    self._json(404, {"error": "No recovery file"})
+                    return
+                self._json(200, data)
+                return
             if path == "/api/sample.pdf":
                 data = app.sample()
                 self._bytes(200, data, "application/pdf", _content_disposition("sample-plan.pdf"))
@@ -532,6 +588,15 @@ def _make_handler(app: App):
                     self._json(400, {"error": str(exc)})
                     return
                 print(f"added schedule ({info.get('added', 0)} sheets)")
+                self._json(200, info)
+                return
+            if path == "/api/recover":
+                try:
+                    payload = json.loads(body.decode("utf-8") or "{}")
+                    info = save_recovery(payload)
+                except (ValueError, json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
                 self._json(200, info)
                 return
             if path == "/api/export":

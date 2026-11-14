@@ -307,21 +307,133 @@ def _arrow_head(item: dict) -> tuple[float, float, float, float, float, float, f
     return (bx, by, x2, y2, bx - uy * wing, by + ux * wing, bx + uy * wing, by - ux * wing)
 
 
-def _draw_line(page, item: dict, oc: int = 0) -> None:
-    """Dashed switch leg, or a finer construction line. Endpoints are visual."""
+HOP_RADIUS = 7.0
+
+
+def _hoppable(item: dict) -> bool:
+    kind = item.get("kind")
+    if kind == "run":
+        return True
+    return kind == "line" and item.get("guide") is not True
+
+
+def crossing_hops(items: list[dict]) -> dict[int, list[float]]:
+    """Distances along the later segment where a dashed line or run should hop.
+
+    The line or run that appears later in the list hops over the earlier one.
+    Near-parallel lines and crossings at an endpoint are left alone.
+    """
+    indexes = [i for i, item in enumerate(items) if _hoppable(item)]
+    found: dict[int, list[float]] = {i: [] for i in indexes}
+    for pos, i in enumerate(indexes):
+        first = items[i]
+        ax1, ay1 = float(first["x1"]), float(first["y1"])
+        ax2, ay2 = float(first["x2"]), float(first["y2"])
+        arx, ary = ax2 - ax1, ay2 - ay1
+        alen = math.hypot(arx, ary)
+        if alen < 8:
+            continue
+        for j in indexes[pos + 1 :]:
+            second = items[j]
+            if int(first.get("page", -1)) != int(second.get("page", -2)):
+                continue
+            bx1, by1 = float(second["x1"]), float(second["y1"])
+            bx2, by2 = float(second["x2"]), float(second["y2"])
+            brx, bry = bx2 - bx1, by2 - by1
+            blen = math.hypot(brx, bry)
+            if blen < 8:
+                continue
+            den = arx * bry - ary * brx
+            if abs(den) / (alen * blen) < 0.26:
+                continue
+            qpx, qpy = bx1 - ax1, by1 - ay1
+            t = (qpx * bry - qpy * brx) / den
+            u = (qpx * ary - qpy * arx) / den
+            if 0.08 < t < 0.92 and 0.08 < u < 0.92:
+                found[j].append(u * blen)
+    return found
+
+
+def _stroke_segment(page, x1, y1, x2, y2, distances, color, width, dashes, oc: int) -> None:
+    """Straight stroke, with a semicircle hop at each crossing distance."""
     matrix = page.derotation_matrix
-    start = pymupdf.Point(item["x1"], item["y1"]) * matrix
-    end = pymupdf.Point(item["x2"], item["y2"]) * matrix
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length < 1:
+        return
+    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    px, py = -uy, ux
+    radius = min(HOP_RADIUS, length * 0.18)
+    cuts: list[tuple[float, float]] = []
+    for dist in sorted(float(item) for item in distances or []):
+        if dist - radius < 6 or dist + radius > length - 6:
+            continue
+        if cuts and dist - radius < cuts[-1][1] + 1:
+            continue
+        cuts.append((dist - radius, dist + radius))
+
+    def pt(x: float, y: float) -> pymupdf.Point:
+        return pymupdf.Point(x, y) * matrix
+
+    shaft = page.new_shape()
+    arc = page.new_shape() if cuts else None
+    cx, cy = x1, y1
+    bow = 0.5522847498
+    for start, stop in cuts:
+        ax, ay = x1 + ux * start, y1 + uy * start
+        bx, by = x1 + ux * stop, y1 + uy * stop
+        mid = (start + stop) / 2
+        topx = x1 + ux * mid + px * radius
+        topy = y1 + uy * mid + py * radius
+        shaft.draw_line(pt(cx, cy), pt(ax, ay))
+        assert arc is not None
+        arc.draw_bezier(
+            pt(ax, ay),
+            pt(ax + px * bow * radius, ay + py * bow * radius),
+            pt(topx - ux * bow * radius, topy - uy * bow * radius),
+            pt(topx, topy),
+        )
+        arc.draw_bezier(
+            pt(topx, topy),
+            pt(topx + ux * bow * radius, topy + uy * bow * radius),
+            pt(bx + px * bow * radius, by + py * bow * radius),
+            pt(bx, by),
+        )
+        cx, cy = bx, by
+    shaft.draw_line(pt(cx, cy), pt(x2, y2))
+    shaft.finish(color=color, width=width, dashes=dashes, closePath=False, lineCap=0, oc=oc)
+    shaft.commit(overlay=True)
+    if arc is not None:
+        arc.finish(color=color, width=width, closePath=False, lineCap=1, oc=oc)
+        arc.commit(overlay=True)
+
+
+def _draw_line(page, item: dict, oc: int = 0, hops: list[float] | None = None) -> None:
+    """Dashed switch leg, or a finer construction line. Endpoints are visual."""
     guide = item.get("guide") is True
-    page.draw_line(
-        start,
-        end,
-        color=_rgb(item["color"]),
-        width=0.9 if guide else 1.35,
-        dashes="[2.5 2.5] 0" if guide else "[8 6] 0",
-        lineCap=0,
-        overlay=True,
-        oc=oc,
+    if guide:
+        matrix = page.derotation_matrix
+        page.draw_line(
+            pymupdf.Point(item["x1"], item["y1"]) * matrix,
+            pymupdf.Point(item["x2"], item["y2"]) * matrix,
+            color=_rgb(item["color"]),
+            width=0.9,
+            dashes="[2.5 2.5] 0",
+            lineCap=0,
+            overlay=True,
+            oc=oc,
+        )
+        return
+    _stroke_segment(
+        page,
+        float(item["x1"]),
+        float(item["y1"]),
+        float(item["x2"]),
+        float(item["y2"]),
+        hops or [],
+        _rgb(item["color"]),
+        1.35,
+        "[8 6] 0",
+        oc,
     )
 
 
@@ -366,7 +478,7 @@ def _readable_angle(dx: float, dy: float) -> float:
     return angle
 
 
-def _draw_run(page, item: dict, label: str, oc: int = 0) -> None:
+def _draw_run(page, item: dict, label: str, oc: int = 0, hops: list[float] | None = None) -> None:
     """Solid run with end bars and a label centered on the under side."""
     matrix = page.derotation_matrix
     x1, y1 = float(item["x1"]), float(item["y1"])
@@ -381,7 +493,7 @@ def _draw_run(page, item: dict, label: str, oc: int = 0) -> None:
     def pt(x: float, y: float) -> pymupdf.Point:
         return pymupdf.Point(x, y) * matrix
 
-    page.draw_line(pt(x1, y1), pt(x2, y2), color=color, width=1.35, lineCap=0, overlay=True, oc=oc)
+    _stroke_segment(page, x1, y1, x2, y2, hops or [], color, 1.35, None, oc)
     for sx, sy in ((x1, y1), (x2, y2)):
         page.draw_line(
             pt(sx - px * bar, sy - py * bar),
@@ -588,7 +700,8 @@ def export_pdf(
         # White boxes cover the underlay. Everything else is drawn after them.
         ordered = [item for item in drawing if item.get("kind") == "whitebox"]
         ordered.extend(item for item in drawing if item.get("kind") != "whitebox")
-        for item in ordered:
+        hop_map = crossing_hops(ordered)
+        for index, item in enumerate(ordered):
             page = doc[item["page"]]
             kind = item.get("kind") or "symbol"
             oc = oc_for(item)
@@ -596,7 +709,7 @@ def export_pdf(
                 _draw_whitebox(page, item, oc)
                 continue
             if kind == "line":
-                _draw_line(page, item, oc)
+                _draw_line(page, item, oc, hop_map.get(index))
                 if show_circuits and item.get("circuit") and item.get("guide") is not True:
                     _draw_circuit_tag(
                         page,
@@ -616,7 +729,7 @@ def export_pdf(
                 label = str(symbols_by_id[item["symbolId"]].get("runLabel") or "").strip()
                 if not label:
                     raise ValueError("run has no label")
-                _draw_run(page, item, label, oc)
+                _draw_run(page, item, label, oc, hop_map.get(index))
                 if show_circuits and item.get("circuit"):
                     _draw_circuit_tag(
                         page,

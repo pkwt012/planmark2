@@ -15,11 +15,11 @@ sys.path.insert(0, str(ROOT))
 import pymupdf
 
 from elecplan.counts import build_counts_pdf
-from elecplan.export import export_pdf, parse_placements
+from elecplan.export import crossing_hops, export_pdf, parse_placements
 from elecplan.legend import build_legend_block, build_legend_pdf, legend_layout
 from elecplan.library import load_symbols, prepare_svg
 from elecplan.sample_plan import build_sample_pdf
-from elecplan.server import App, Session, make_server
+from elecplan.server import App, Session, make_server, recovery_dir
 
 PASS = 0
 FAIL = 0
@@ -68,6 +68,19 @@ def pixmap_diff(a, ax, ay, b, bx, by, pad):
             total += abs(pa[0] - pb[0]) + abs(pa[1] - pb[1]) + abs(pa[2] - pb[2])
             count += 3
     return total / count
+
+
+def curve_count(pdf_bytes):
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    count = 0
+    try:
+        for item in doc[0].get_drawings():
+            for part in item["items"]:
+                if part[0] == "c":
+                    count += 1
+    finally:
+        doc.close()
+    return count
 
 
 def text_dirs(page, needle):
@@ -1089,6 +1102,44 @@ def main():
         blank_circuit_rejected = True
     check("blank circuit rejected", blank_circuit_rejected)
 
+    cross = [
+        {"kind": "line", "page": 0, "x1": 40, "y1": 200, "x2": 360, "y2": 200, "color": "#141414"},
+        {"kind": "line", "page": 0, "x1": 200, "y1": 40, "x2": 200, "y2": 360, "color": "#141414"},
+    ]
+    hops = crossing_hops(cross)
+    check(
+        "later dashed line hops",
+        hops[0] == [] and len(hops[1]) == 1 and 140 < hops[1][0] < 180,
+        str(hops),
+    )
+    parallel = [
+        {"kind": "line", "page": 0, "x1": 40, "y1": 80, "x2": 360, "y2": 80, "color": "#141414"},
+        {"kind": "line", "page": 0, "x1": 40, "y1": 160, "x2": 360, "y2": 160, "color": "#141414"},
+    ]
+    check("parallel lines do not hop", not any(crossing_hops(parallel).values()))
+    touched = [
+        {"kind": "line", "page": 0, "x1": 0, "y1": 50, "x2": 100, "y2": 50, "color": "#141414"},
+        {"kind": "line", "page": 0, "x1": 100, "y1": 0, "x2": 100, "y2": 100, "color": "#141414"},
+    ]
+    check("endpoint crossings do not hop", not any(crossing_hops(touched).values()))
+    guided = [
+        {"kind": "line", "guide": True, "page": 0, "x1": 0, "y1": 0, "x2": 200, "y2": 0, "color": "#5c6570"},
+        {"kind": "line", "page": 0, "x1": 100, "y1": -80, "x2": 100, "y2": 80, "color": "#141414"},
+    ]
+    check("guide lines do not hop", not any(crossing_hops(guided).values()))
+    run_cross = [
+        {"kind": "line", "page": 0, "x1": 20, "y1": 80, "x2": 180, "y2": 80, "color": "#141414"},
+        {"kind": "run", "page": 0, "x1": 100, "y1": 20, "x2": 100, "y2": 160, "symbolId": "ledtape", "color": "#141414"},
+    ]
+    run_hops = crossing_hops(run_cross)
+    check("a later run hops a dashed line", run_hops[0] == [] and len(run_hops[1]) == 1, str(run_hops))
+    blank = pymupdf.open()
+    blank.new_page(width=400, height=400)
+    blank_bytes = blank.tobytes()
+    blank.close()
+    check("export draws the hop", curve_count(export_pdf(blank_bytes, cross, {})) >= 2)
+    check("export leaves parallel lines straight", curve_count(export_pdf(blank_bytes, parallel, {})) == 0)
+
     print("server")
     app = App()
     httpd = make_server(app, "127.0.0.1", 0)
@@ -1102,6 +1153,10 @@ def main():
     check("layout help is a construction line", b"construction rectangle" in body)
     check("white box tool is on the page", b"White box" in body and b"Add schedule sheet" in body)
     check("export choices are on the page", b"Export to revise" in body and b"Export final" in body)
+    check(
+        "help notes recovery, gangs, and hops",
+        b"planmarks-recovery" in body and b"Group switches" in body and b"hops over" in body and b"65%" in body,
+    )
     status, _headers, body = request(base, "/static/app.js")
     check(
         "script",
@@ -1114,6 +1169,13 @@ def main():
         and b"function placeLayer" in body
         and b"function snapToUnderlay" in body
         and b"function snapToGuide" in body
+        and b"function writeRecovery" in body
+        and b"function groupSwitches" in body
+        and b"function nextStackedId" in body
+        and b"function symbolHitContains" in body
+        and b"GANG_PITCH = 0.6" in body
+        and b"HIT_SCALE = 0.65" in body
+        and b"function hopPathParts" in body
         and b"guide: true" in body
         and b"Recessed lights placed" not in body,
     )
@@ -1378,6 +1440,61 @@ def main():
 
     status, _headers, body = request(base, "/api/sample.pdf")
     check("sample endpoint", status == 200 and body.startswith(b"%PDF"))
+
+    pdf_id = "0123456789abcdef"
+    rec_path = recovery_dir() / f"{pdf_id}.json"
+    try:
+        payload = json.dumps(
+            {
+                "app": "plan-marks",
+                "version": 1,
+                "pdfId": pdf_id,
+                "pdfName": "room.pdf",
+                "placements": [{"kind": "symbol", "symbolId": "switch", "page": 0, "x": 10, "y": 20, "size": 28}],
+            }
+        ).encode()
+        status, _headers, body = request(
+            base,
+            "/api/recover",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        saved = json.loads(body)
+        check(
+            "recovery save",
+            status == 200 and saved.get("folder") == "planmarks-recovery" and saved.get("file") == pdf_id + ".json" and saved.get("savedAt"),
+            body[:200],
+        )
+        status, _headers, body = request(base, "/api/recover?id=" + pdf_id)
+        loaded = json.loads(body)
+        check(
+            "recovery load",
+            status == 200
+            and loaded.get("app") == "plan-marks"
+            and loaded.get("version") == 1
+            and loaded.get("placements", [{}])[0].get("symbolId") == "switch"
+            and loaded.get("savedAt"),
+            body[:200],
+        )
+        status, _headers, body = request(base, "/api/recover?id=not-an-id")
+        check("recovery bad id", status == 400, body[:160])
+        status, _headers, body = request(base, "/api/recover?id=0000000000000000")
+        check("recovery missing", status == 404, body[:160])
+        status, _headers, body = request(
+            base,
+            "/api/recover",
+            data=b'{"app":"other"}',
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        check("recovery rejects a foreign file", status == 400, body[:160])
+    finally:
+        rec_path.unlink(missing_ok=True)
+        rec_path.with_suffix(".json.tmp").unlink(missing_ok=True)
+        folder = rec_path.parent
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
 
     httpd.shutdown()
     print()
