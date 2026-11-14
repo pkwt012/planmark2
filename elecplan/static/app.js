@@ -23,6 +23,8 @@ const SCALE_STANDARDS = [
 
 const LAYERS = ["Power", "Lighting", "Low-volt", "Circuitry"];
 const SNAP_RADIUS = 12;
+const HIT_SCALE = 0.65;
+const GANG_PITCH = 0.6;
 
 const state = {
   doc: null,
@@ -58,7 +60,11 @@ const state = {
   pageUrl: "",
   saveTimer: 0,
   sharpenTimer: 0,
+  recoveryTimer: 0,
   pendingProject: null,
+  pendingRecovery: null,
+  picked: new Set(),
+  browserSavedAt: "",
 };
 
 let edgeMap = null;
@@ -342,6 +348,7 @@ function goToPage(index) {
     state.whiteboxDraft = null;
     toast("White box cancelled because the sheet changed.");
   }
+  state.picked = new Set();
   showPage(index, { fit: refit });
   syncInspector();
 }
@@ -392,7 +399,8 @@ function positionHandle(handle, p) {
 
 function markElement(p) {
   const el = document.createElement("div");
-  el.className = "mark" + (p.id === state.selectedId ? " selected" : "");
+  const picked = state.picked.has(p.id) ? " picked" : "";
+  el.className = "mark symbol" + (p.id === state.selectedId ? " selected" : "") + picked;
   el.dataset.id = p.id;
   positionMark(el, p);
   const glyph = document.createElement("div");
@@ -400,6 +408,15 @@ function markElement(p) {
   const svg = paintSvg(p.symbolId, p.rotation, p.color);
   if (svg) glyph.appendChild(document.importNode(svg, true));
   el.appendChild(glyph);
+  const hit = document.createElement("div");
+  hit.className = "hit";
+  const hitPct = HIT_SCALE * 100;
+  const hitInset = ((1 - HIT_SCALE) / 2) * 100;
+  hit.style.width = hitPct + "%";
+  hit.style.height = hitPct + "%";
+  hit.style.left = hitInset + "%";
+  hit.style.top = hitInset + "%";
+  el.appendChild(hit);
   if (state.showCircuits && p.circuit) {
     const tag = document.createElement("div");
     tag.className = "circuit-tag";
@@ -420,6 +437,34 @@ function markElement(p) {
 
 function isSymbol(p) {
   return Boolean(p && (p.kind === "symbol" || (!p.kind && p.symbolId)));
+}
+
+function isSwitchSymbol(p) {
+  if (!isSymbol(p)) return false;
+  const sym = symbolsById[p.symbolId];
+  return Boolean(sym && sym.category === "switches");
+}
+
+function symbolHitContains(p, x, y) {
+  if (!isSymbol(p) || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
+  const half = (Number(p.size) || 0) * HIT_SCALE / 2;
+  return Math.abs(x - p.x) <= half && Math.abs(y - p.y) <= half;
+}
+
+function symbolsAt(x, y) {
+  const ids = [];
+  for (const item of state.placements) {
+    if (item.page !== state.pageIndex || !layerVisible(item)) continue;
+    if (symbolHitContains(item, x, y)) ids.push(item.id);
+  }
+  return ids;
+}
+
+function nextStackedId(ids, previousId) {
+  if (!ids || ids.length < 2) return null;
+  const index = ids.indexOf(previousId);
+  if (index < 0) return null;
+  return ids[(index + 1) % ids.length];
 }
 
 function isSegment(p) {
@@ -740,6 +785,132 @@ function wireLayer(id) {
   return svg;
 }
 
+const HOP_RADIUS = 7;
+
+function isHoppable(p) {
+  if (!p) return false;
+  if (p.kind === "run") return true;
+  return p.kind === "line" && p.guide !== true;
+}
+
+function visibleSegments() {
+  const items = [];
+  for (const item of state.placements) {
+    if (!isSegment(item) || item.page !== state.pageIndex || !layerVisible(item)) continue;
+    items.push(item);
+  }
+  if (state.lineDraft && state.lineDraft.page === state.pageIndex) items.push(state.lineDraft);
+  if (state.runDraft && state.runDraft.page === state.pageIndex) items.push(state.runDraft);
+  return items;
+}
+
+function crossingDistances(items) {
+  /* Keep this in step with crossing_hops in export.py. The later segment hops. */
+  const indexes = [];
+  items.forEach((item, index) => {
+    if (isHoppable(item)) indexes.push(index);
+  });
+  const found = new Map();
+  for (const index of indexes) found.set(items[index], []);
+  for (let pos = 0; pos < indexes.length; pos += 1) {
+    const first = items[indexes[pos]];
+    const ax1 = Number(first.x1);
+    const ay1 = Number(first.y1);
+    const ax2 = Number(first.x2);
+    const ay2 = Number(first.y2);
+    const arx = ax2 - ax1;
+    const ary = ay2 - ay1;
+    const alen = Math.hypot(arx, ary);
+    if (alen < 8) continue;
+    for (let next = pos + 1; next < indexes.length; next += 1) {
+      const second = items[indexes[next]];
+      if (Number(first.page) !== Number(second.page)) continue;
+      const bx1 = Number(second.x1);
+      const by1 = Number(second.y1);
+      const bx2 = Number(second.x2);
+      const by2 = Number(second.y2);
+      const brx = bx2 - bx1;
+      const bry = by2 - by1;
+      const blen = Math.hypot(brx, bry);
+      if (blen < 8) continue;
+      const den = arx * bry - ary * brx;
+      if (Math.abs(den) / (alen * blen) < 0.26) continue;
+      const qpx = bx1 - ax1;
+      const qpy = by1 - ay1;
+      const t = (qpx * bry - qpy * brx) / den;
+      const u = (qpx * ary - qpy * arx) / den;
+      if (t > 0.08 && t < 0.92 && u > 0.08 && u < 0.92) found.get(second).push(u * blen);
+    }
+  }
+  return found;
+}
+
+function strokeParts(x1, y1, x2, y2, distances) {
+  /* Semicircle hops. Same radius and cubic as _stroke_segment in export.py. */
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  if (length < 1) return null;
+  const ux = (x2 - x1) / length;
+  const uy = (y2 - y1) / length;
+  const px = -uy;
+  const py = ux;
+  const radius = Math.min(HOP_RADIUS, length * 0.18);
+  const cuts = [];
+  const sorted = (distances || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  for (const dist of sorted) {
+    if (dist - radius < 6 || dist + radius > length - 6) continue;
+    if (cuts.length && dist - radius < cuts[cuts.length - 1][1] + 1) continue;
+    cuts.push([dist - radius, dist + radius]);
+  }
+  const bow = 0.5522847498;
+  let cx = x1;
+  let cy = y1;
+  let shaft = `M ${cx} ${cy}`;
+  const arcs = [];
+  for (const [start, stop] of cuts) {
+    const ax = x1 + ux * start;
+    const ay = y1 + uy * start;
+    const bx = x1 + ux * stop;
+    const by = y1 + uy * stop;
+    const mid = (start + stop) / 2;
+    const topx = x1 + ux * mid + px * radius;
+    const topy = y1 + uy * mid + py * radius;
+    shaft += ` L ${ax} ${ay} M ${bx} ${by}`;
+    arcs.push(
+      `M ${ax} ${ay} C ${ax + px * bow * radius} ${ay + py * bow * radius}, ${topx - ux * bow * radius} ${topy - uy * bow * radius}, ${topx} ${topy} C ${topx + ux * bow * radius} ${topy + uy * bow * radius}, ${bx + px * bow * radius} ${by + py * bow * radius}, ${bx} ${by}`,
+    );
+    cx = bx;
+    cy = by;
+  }
+  shaft += ` L ${x2} ${y2}`;
+  return { shaft, arcs };
+}
+
+function hopPathParts(p, distances) {
+  return strokeParts(Number(p.x1), Number(p.y1), Number(p.x2), Number(p.y2), distances);
+}
+
+function addWirePath(parent, d, className, color, width, dash) {
+  const path = document.createElementNS(SVGNS, "path");
+  path.setAttribute("class", className);
+  path.setAttribute("d", d);
+  path.setAttribute("stroke", color);
+  path.setAttribute("stroke-width", String(width));
+  path.setAttribute("fill", "none");
+  if (dash) path.setAttribute("stroke-dasharray", dash === true ? "8 6" : String(dash));
+  path.setAttribute("stroke-linecap", dash ? "butt" : "round");
+  path.setAttribute("pointer-events", "none");
+  parent.appendChild(path);
+  return path;
+}
+
+function addHoppedStroke(parent, p, className, color, width, dash, distances) {
+  const parts = hopPathParts(p, distances);
+  if (!parts) return false;
+  addWirePath(parent, parts.shaft, className, color, width, dash);
+  for (const arc of parts.arcs) addWirePath(parent, arc, className, color, width, false);
+  return true;
+}
+
 function addWireLine(parent, p, className, color, width, events, dashed) {
   const line = document.createElementNS(SVGNS, "line");
   line.setAttribute("class", className);
@@ -789,19 +960,24 @@ function addRunLabel(parent, geo, color, events) {
   parent.appendChild(text);
 }
 
-function wireGroup(p, draft) {
+function wireGroup(p, draft, distances) {
   const g = document.createElementNS(SVGNS, "g");
   g.setAttribute("class", draft ? "wire wire-draft" : "wire");
   if (!draft) g.dataset.id = p.id;
   const metrics = wireMetrics();
   const color = p.color || state.ink || "#141414";
+  const hops = distances || [];
   if (p.kind === "run") {
     const geo = runGeometry(p);
     if (!draft && p.id === state.selectedId) {
-      addWireLine(g, p, "wire-halo", "#e2a23a", 3.4, "none", false);
+      if (!addHoppedStroke(g, p, "wire-halo", "#e2a23a", 3.4, false, hops)) {
+        addWireLine(g, p, "wire-halo", "#e2a23a", 3.4, "none", false);
+      }
       for (const bar of geo.bars) addWireLine(g, bar, "wire-halo", "#e2a23a", 3.4, "none", false);
     }
-    addWireLine(g, p, "wire-ink", color, 1.35, "none", false);
+    if (!addHoppedStroke(g, p, "wire-ink", color, 1.35, false, hops)) {
+      addWireLine(g, p, "wire-ink", color, 1.35, "none", false);
+    }
     for (const bar of geo.bars) addWireLine(g, bar, "run-bar", color, 1.35, draft ? "none" : "stroke", false);
     addRunLabel(g, geo, color, draft ? "none" : "all");
     if (!draft && state.showCircuits && p.circuit) addCircuitTag(g, p);
@@ -815,10 +991,15 @@ function wireGroup(p, draft) {
   const shaft = arrow ? arrowParts(p) : p;
   const dash = arrow ? false : (p.guide ? "2.5 2.5" : true);
   const inkWidth = p.guide ? 0.9 : 1.35;
+  const hopped = !arrow && !p.guide;
   if (!draft && p.id === state.selectedId) {
-    addWireLine(g, p, "wire-halo", "#e2a23a", 3.4, "none", dash);
+    if (!(hopped && addHoppedStroke(g, p, "wire-halo", "#e2a23a", 3.4, false, hops))) {
+      addWireLine(g, p, "wire-halo", "#e2a23a", 3.4, "none", dash);
+    }
   }
-  addWireLine(g, shaft, "wire-ink", color, inkWidth, "none", dash);
+  if (!(hopped && addHoppedStroke(g, p, "wire-ink", color, inkWidth, true, hops))) {
+    addWireLine(g, shaft, "wire-ink", color, inkWidth, "none", dash);
+  }
   if (arrow) addArrowHead(g, p, color, draft ? "none" : "all");
   if (!draft && state.showCircuits && p.circuit && !p.guide) addCircuitTag(g, p);
   if (!draft) {
@@ -877,9 +1058,10 @@ function renderWires() {
   wires.replaceChildren();
   handles.replaceChildren();
   if (!currentPage()) return;
+  const hops = crossingDistances(visibleSegments());
   for (const p of state.placements) {
     if (!isSegment(p) || p.page !== state.pageIndex || !layerVisible(p)) continue;
-    wires.appendChild(wireGroup(p, false));
+    wires.appendChild(wireGroup(p, false, hops.get(p)));
     if (p.id === state.selectedId) handles.appendChild(handleGroup(p));
   }
   const selectedBox = selected();
@@ -887,13 +1069,13 @@ function renderWires() {
     handles.appendChild(boxHandleGroup(selectedBox));
   }
   if (state.lineDraft && state.lineDraft.page === state.pageIndex) {
-    wires.appendChild(wireGroup(state.lineDraft, true));
+    wires.appendChild(wireGroup(state.lineDraft, true, hops.get(state.lineDraft)));
   }
   if (state.arrowDraft && state.arrowDraft.page === state.pageIndex) {
     wires.appendChild(wireGroup(state.arrowDraft, true));
   }
   if (state.runDraft && state.runDraft.page === state.pageIndex) {
-    wires.appendChild(wireGroup(state.runDraft, true));
+    wires.appendChild(wireGroup(state.runDraft, true, hops.get(state.runDraft)));
   }
   if (state.layoutDraft && state.layoutDraft.page === state.pageIndex) {
     addLayoutDraft(wires);
@@ -929,12 +1111,13 @@ function renderMarks() {
     else marksLayer.appendChild(markElement(p));
   }
   renderWires();
+  paintGangBoxes();
   drawCalib();
   renderCounts();
 }
 
 function updateLine(p) {
-  if (p.kind === "run") {
+  if (isHoppable(p)) {
     renderWires();
     return;
   }
@@ -1118,7 +1301,8 @@ function updateMark(p) {
     updateLine(p);
     return;
   }
-  followAnchors(p);
+  if (followAnchors(p)) renderWires();
+  if (p.groupId) paintGangBoxes();
   if (p.kind === "legend") {
     updateLegend(p);
     return;
@@ -1206,6 +1390,7 @@ function restore(raw) {
   state.calibration = data.calibration || null;
   state.defaultSize = data.defaultSize || 28;
   state.selectedId = data.selectedId || null;
+  state.picked = new Set();
   state.hiddenLayers = new Set(Array.isArray(data.hiddenLayers) ? data.hiddenLayers : []);
   state.showCircuits = Boolean(data.showCircuits);
   if (state.selectedId && !selected()) state.selectedId = null;
@@ -1246,13 +1431,135 @@ function scheduleSave() {
   state.saveTimer = setTimeout(writeAutosave, 250);
 }
 
+function stampedProject() {
+  const data = projectData();
+  data.savedAt = new Date().toISOString();
+  return data;
+}
+
 function writeAutosave() {
   if (!state.doc) return;
   try {
-    localStorage.setItem("planmarks:v1:" + state.doc.id, JSON.stringify(projectData()));
+    const data = stampedProject();
+    localStorage.setItem("planmarks:v1:" + state.doc.id, JSON.stringify(data));
+    state.browserSavedAt = data.savedAt;
+    setSaveStatus(data.savedAt, false);
   } catch (_err) {
     /* private mode or a full disk */
   }
+}
+
+function setSaveStatus(savedAt, browserOnly) {
+  const el = $("statusSave");
+  if (!el) return;
+  if (!state.doc) {
+    el.textContent = "";
+    return;
+  }
+  if (browserOnly) {
+    el.textContent = "Autosaved in this browser";
+    return;
+  }
+  if (!savedAt) {
+    el.textContent = "Autosaved";
+    return;
+  }
+  const when = new Date(savedAt);
+  el.textContent = Number.isNaN(when.getTime())
+    ? "Autosaved"
+    : `Autosaved ${when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+async function writeRecovery(keepalive = false) {
+  writeAutosave();
+  if (!state.doc) return null;
+  const body = JSON.stringify(stampedProject());
+  if (keepalive && body.length > 60000) return null;
+  try {
+    const res = await fetch("/api/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: Boolean(keepalive),
+    });
+    if (!res.ok) throw new Error("save failed");
+    const info = await res.json();
+    setSaveStatus(info.savedAt || state.browserSavedAt, false);
+    return info;
+  } catch (_err) {
+    setSaveStatus(state.browserSavedAt, true);
+    return null;
+  }
+}
+
+function startRecoveryTimer() {
+  if (state.recoveryTimer) return;
+  state.recoveryTimer = setInterval(() => {
+    if (state.doc) writeRecovery(false);
+  }, 75000);
+}
+
+function agoText(stamp) {
+  const then = Date.parse(stamp);
+  if (!Number.isFinite(then)) return "earlier";
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins <= 0) return "just now";
+  if (mins === 1) return "1 minute ago";
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+}
+
+async function offerRecovery(pdfId, appliedStamp, appliedPlacements) {
+  if (!pdfId) return;
+  let recovery;
+  try {
+    const res = await fetch("/api/recover?id=" + encodeURIComponent(pdfId));
+    if (!res.ok) return;
+    recovery = await res.json();
+  } catch (_err) {
+    return;
+  }
+  if (!recovery || recovery.app !== "plan-marks") return;
+  const recAt = Date.parse(recovery.savedAt || "");
+  if (!Number.isFinite(recAt)) return;
+  const manual = Number(localStorage.getItem("planmarks:manualAt:" + pdfId) || 0);
+  if (recAt <= manual) return;
+  const appliedAt = Date.parse(appliedStamp || "");
+  if (Number.isFinite(appliedAt) && recAt <= appliedAt) return;
+  if (localStorage.getItem("planmarks:dismiss:" + pdfId) === recovery.savedAt) return;
+  const current = appliedPlacements || state.placements;
+  if (JSON.stringify(recovery.placements || []) === JSON.stringify(current)) return;
+  state.pendingRecovery = recovery;
+  const text = $("recoverText");
+  const bar = $("recoverBar");
+  if (!text || !bar) return;
+  text.textContent = `Recovered autosave from ${agoText(recovery.savedAt)} — Restore?`;
+  bar.hidden = false;
+}
+
+function dismissRecovery() {
+  const bar = $("recoverBar");
+  if (bar) bar.hidden = true;
+  const recovery = state.pendingRecovery;
+  state.pendingRecovery = null;
+  if (recovery && state.doc && recovery.savedAt) {
+    localStorage.setItem("planmarks:dismiss:" + state.doc.id, recovery.savedAt);
+  }
+}
+
+function restoreRecovery() {
+  const recovery = state.pendingRecovery;
+  const bar = $("recoverBar");
+  if (bar) bar.hidden = true;
+  state.pendingRecovery = null;
+  if (!recovery) return;
+  if (state.doc && recovery.savedAt) {
+    localStorage.setItem("planmarks:dismiss:" + state.doc.id, recovery.savedAt);
+  }
+  applyProject(recovery, { quiet: true });
+  toast("Restored the autosave.");
+  writeRecovery(false);
 }
 
 function applyProject(proj, { quiet = false } = {}) {
@@ -1398,9 +1705,18 @@ function applyProject(proj, { quiet = false } = {}) {
     const symbolCircuit = cleanCircuit(item.circuit);
     if (symbolCircuit) symbol.circuit = symbolCircuit;
     if (item.freePlace === true) symbol.freePlace = true;
+    if (isSwitchSymbol(symbol)) {
+      const groupId = typeof item.groupId === "string" ? item.groupId : "";
+      const gang = Number(item.gang);
+      if (/^[\w-]{1,40}$/.test(groupId) && Number.isInteger(gang) && gang >= 0 && gang <= 4) {
+        symbol.groupId = groupId;
+        symbol.gang = gang;
+      }
+    }
     placements.push(symbol);
   }
   state.placements = placements;
+  dissolveThinGroups();
   if (Array.isArray(proj.hiddenLayers)) {
     state.hiddenLayers = new Set(
       proj.hiddenLayers.filter((name) => typeof name === "string").map((name) => normalizeLayer(name, "")).filter(Boolean),
@@ -1413,6 +1729,7 @@ function applyProject(proj, { quiet = false } = {}) {
   if (proj.defaultSize) state.defaultSize = clamp(Number(proj.defaultSize) || 28, 10, 160);
   state.calibration = proj.calibration || null;
   state.selectedId = null;
+  state.picked = new Set();
   state.calibStep = 0;
   state.calibDraft = null;
   renderMarks();
@@ -1593,6 +1910,8 @@ function syncInspector() {
   else if (p && p.kind === "note") hint.textContent = "Edit the label here. Drag it on the sheet. Notes are not listed in the legend or the counts.";
   else if (p && p.kind === "legend") hint.textContent = "Drag the legend. The slider changes how wide it is.";
   else if (p && p.kind === "whitebox") hint.textContent = "Drag the white box to move it. Drag an amber corner to resize it. Shift keeps a corner square.";
+  else if (p && p.groupId && groupMembers(p.groupId).length >= 2) hint.textContent = "This switch is in a multi-gang box. Drag moves the whole box. Each switch still takes its own dashed line. Ungroup separates them.";
+  else if (pickedSwitches().length >= 2) hint.textContent = "Group switches packs these into one box. Each switch still takes its own dashed line.";
   else if (p) hint.textContent = symbolsById[p.symbolId] ? symbolsById[p.symbolId].hint : "Drag to move. Drag the handle to rotate.";
   else hint.textContent = state.doc ? "Pick a symbol, then click the sheet." : "Open a plan, pick a symbol, then click the sheet to place it.";
 
@@ -1701,6 +2020,12 @@ function syncInspector() {
     const match = p && p.kind !== "legend" ? btn.dataset.value === (p.color || "") : btn.dataset.value === state.ink;
     btn.setAttribute("aria-pressed", match ? "true" : "false");
   }
+  const picked = pickedSwitches();
+  const sameSheet = picked.length >= 2 && picked.every((item) => item.page === picked[0].page);
+  $("groupBtn").hidden = !(sameSheet && picked.length <= 5);
+  const grouped = Boolean(p && p.groupId && groupMembers(p.groupId).length >= 2);
+  $("ungroupBtn").hidden = !grouped;
+  $("groupRow").hidden = $("groupBtn").hidden && $("ungroupBtn").hidden;
   viewport.classList.toggle("placing", Boolean(state.armedId || state.tool) && !state.calibStep);
 }
 
@@ -2021,6 +2346,8 @@ function bumpRotation(delta) {
 
 function duplicatePlacement(p, dx, dy) {
   const copy = { ...p, id: uid() };
+  delete copy.groupId;
+  delete copy.gang;
   if (isSegment(p) || isWhitebox(p)) {
     copy.x1 = p.x1 + dx;
     copy.y1 = p.y1 + dy;
@@ -2063,7 +2390,9 @@ function deleteSelected() {
   if (!p) return;
   pushUndo();
   releaseAnchors(p.id);
+  state.picked.delete(p.id);
   state.placements = state.placements.filter((item) => item.id !== p.id);
+  dissolveThinGroups();
   state.selectedId = null;
   renderMarks();
   syncInspector();
@@ -2332,22 +2661,22 @@ function sanitizeAnchors() {
 }
 
 function followAnchors(mark) {
-  if (!mark || isSegment(mark) || mark.kind === "legend" || mark.kind === "whitebox") return;
+  if (!mark || isSegment(mark) || mark.kind === "legend" || mark.kind === "whitebox") return false;
+  let moved = false;
   for (const line of state.placements) {
     if (line.kind !== "line" || line.guide || line.page !== mark.page) continue;
-    let hit = false;
     if (line.a1 === mark.id) {
       line.x1 = mark.x;
       line.y1 = mark.y;
-      hit = true;
+      moved = true;
     }
     if (line.a2 === mark.id) {
       line.x2 = mark.x;
       line.y2 = mark.y;
-      hit = true;
+      moved = true;
     }
-    if (hit) updateLine(line);
   }
+  return moved;
 }
 
 function releaseAnchors(id) {
@@ -2654,9 +2983,214 @@ function placeLegend(pt) {
   toast("Legend placed. Drag it where the crew can read it.");
 }
 
-function startMove(e, id) {
+function groupMembers(groupId) {
+  if (!groupId) return [];
+  return state.placements.filter((item) => item.groupId === groupId && isSwitchSymbol(item));
+}
+
+function dissolveThinGroups() {
+  const counts = new Map();
+  for (const item of state.placements) {
+    if (!item.groupId || !isSwitchSymbol(item)) continue;
+    counts.set(item.groupId, (counts.get(item.groupId) || 0) + 1);
+  }
+  for (const item of state.placements) {
+    if (!item.groupId) continue;
+    if (!isSwitchSymbol(item) || (counts.get(item.groupId) || 0) < 2) {
+      delete item.groupId;
+      delete item.gang;
+    }
+  }
+}
+
+function pickedSwitches() {
+  const items = [];
+  for (const id of state.picked) {
+    const item = placement(id);
+    if (isSwitchSymbol(item)) items.push(item);
+  }
+  return items;
+}
+
+function groupAxis(items) {
+  let best = 0;
+  let axis = { x: 1, y: 0 };
+  for (let i = 0; i < items.length; i += 1) {
+    for (let j = i + 1; j < items.length; j += 1) {
+      const dx = items[j].x - items[i].x;
+      const dy = items[j].y - items[i].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > best) {
+        best = dist;
+        axis = dist < 0.01 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
+      }
+    }
+  }
+  return axis;
+}
+
+function sortedOnAxis(items, axis) {
+  return [...items].sort((a, b) => (a.x * axis.x + a.y * axis.y) - (b.x * axis.x + b.y * axis.y));
+}
+
+function switchesAreAdjacent(items) {
+  if (items.length < 2 || items.length > 5) return false;
+  const page = items[0].page;
+  if (items.some((item) => item.page !== page)) return false;
+  const sorted = sortedOnAxis(items, groupAxis(items));
+  const minSize = Math.min(...sorted.map((item) => item.size || 28));
+  for (let i = 1; i < sorted.length; i += 1) {
+    const gap = Math.hypot(sorted[i].x - sorted[i - 1].x, sorted[i].y - sorted[i - 1].y);
+    if (gap > minSize * 2.4) return false;
+  }
+  return true;
+}
+
+function gangLayouts() {
+  const groups = new Map();
+  for (const item of state.placements) {
+    if (item.page !== state.pageIndex || !layerVisible(item) || !item.groupId || !isSwitchSymbol(item)) continue;
+    if (!groups.has(item.groupId)) groups.set(item.groupId, []);
+    groups.get(item.groupId).push(item);
+  }
+  const boxes = [];
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const item of members) {
+      left = Math.min(left, item.x - item.size / 2);
+      top = Math.min(top, item.y - item.size / 2);
+      right = Math.max(right, item.x + item.size / 2);
+      bottom = Math.max(bottom, item.y + item.size / 2);
+    }
+    const pad = 1.5;
+    boxes.push({
+      left: left - pad,
+      top: top - pad,
+      width: right - left + pad * 2,
+      height: bottom - top + pad * 2,
+    });
+  }
+  return boxes;
+}
+
+function paintGangBoxes() {
+  if (!marksLayer) return;
+  for (const old of marksLayer.querySelectorAll(".gang-box")) old.remove();
+  const first = marksLayer.firstChild;
+  for (const box of gangLayouts()) {
+    const el = document.createElement("div");
+    el.className = "gang-box";
+    el.style.left = box.left + "px";
+    el.style.top = box.top + "px";
+    el.style.width = box.width + "px";
+    el.style.height = box.height + "px";
+    marksLayer.insertBefore(el, first);
+  }
+}
+
+function togglePick(p) {
+  if (!isSwitchSymbol(p)) return;
+  const adding = !state.picked.has(p.id);
+  const current = selected();
+  if (adding && state.picked.size === 0 && current && current.id !== p.id && current.page === p.page && isSwitchSymbol(current)) {
+    state.picked.add(current.id);
+  }
+  if (adding) state.picked.add(p.id);
+  else state.picked.delete(p.id);
+  state.selectedId = p.id;
+  renderMarks();
+  syncInspector();
+  setStatus();
+}
+
+function groupSwitches() {
+  const items = pickedSwitches();
+  if (items.length < 2 || items.length > 5) {
+    toast("Shift-click two to five switches, then group them.");
+    return;
+  }
+  if (items.some((item) => item.page !== items[0].page)) {
+    toast("Group switches that are on the same sheet.");
+    return;
+  }
+  if (!switchesAreAdjacent(items)) {
+    toast("Those switches are too far apart to share one box.");
+    return;
+  }
+  pushUndo();
+  const axis = groupAxis(items);
+  const sorted = sortedOnAxis(items, axis);
+  const pitch = (sorted.reduce((sum, item) => sum + item.size, 0) / sorted.length) * GANG_PITCH;
+  const cx = sorted.reduce((sum, item) => sum + item.x, 0) / sorted.length;
+  const cy = sorted.reduce((sum, item) => sum + item.y, 0) / sorted.length;
+  const mid = (sorted.length - 1) / 2;
+  const groupId = uid();
+  sorted.forEach((item, index) => {
+    const along = (index - mid) * pitch;
+    item.x = cx + axis.x * along;
+    item.y = cy + axis.y * along;
+    item.groupId = groupId;
+    item.gang = index;
+    followAnchors(item);
+  });
+  state.selectedId = sorted[0].id;
+  state.picked = new Set(sorted.map((item) => item.id));
+  renderMarks();
+  syncInspector();
+  scheduleSave();
+  setStatus();
+}
+
+function ungroupSwitches() {
+  const current = selected();
+  const members = current && current.groupId ? groupMembers(current.groupId) : [];
+  if (members.length < 2) return;
+  pushUndo();
+  for (const item of members) {
+    delete item.groupId;
+    delete item.gang;
+  }
+  renderMarks();
+  syncInspector();
+  scheduleSave();
+  setStatus();
+}
+
+function moveWithGroup(drag, dx, dy, shift) {
+  const primary = placement(drag.id);
+  const origin = (drag.origins || []).find((item) => item.id === drag.id);
+  if (!primary || !origin) return;
+  let x = origin.x + dx;
+  let y = origin.y + dy;
+  if (isSymbol(primary)) {
+    const snapped = snapPlacement({ x, y }, primary.symbolId, primary.freePlace, shift);
+    x = snapped.x;
+    y = snapped.y;
+  }
+  const adx = x - origin.x;
+  const ady = y - origin.y;
+  let wired = false;
+  for (const item of drag.origins) {
+    const mate = placement(item.id);
+    if (!mate || isSegment(mate) || isWhitebox(mate)) continue;
+    mate.x = item.x + adx;
+    mate.y = item.y + ady;
+    if (followAnchors(mate)) wired = true;
+    const el = marksLayer.querySelector(`.mark[data-id="${CSS.escape(mate.id)}"]`);
+    if (el) positionMark(el, mate);
+  }
+  if (wired) renderWires();
+  paintGangBoxes();
+}
+
+function startMove(e, id, startPdf) {
   let p = placement(id);
   if (!p) return;
+  const previousId = state.selectedId;
   state.selectedId = id;
   let undoOnMove = true;
   if (e.altKey) {
@@ -2665,13 +3199,19 @@ function startMove(e, id) {
     state.selectedId = p.id;
     undoOnMove = false;
   }
-  const pdf = clientToPdf(e.clientX, e.clientY);
+  const pdf = startPdf || clientToPdf(e.clientX, e.clientY);
+  const mates = !e.altKey && p.groupId && isSwitchSymbol(p) ? groupMembers(p.groupId) : [p];
+  const stack = isSymbol(p) && !e.altKey && !e.shiftKey ? symbolsAt(pdf.x, pdf.y) : [];
+  state.picked = new Set();
   state.drag = {
     type: "move",
     id: p.id,
+    previousId,
+    stack,
     startX: pdf.x,
     startY: pdf.y,
     origin: placementOrigin(p),
+    origins: mates.map((item) => ({ id: item.id, ...placementOrigin(item) })),
     moved: false,
     alt: e.altKey,
     undo: undoOnMove,
@@ -2760,6 +3300,13 @@ function onPointerDown(e) {
   const mark = e.target.closest(".mark");
   if (mark) {
     e.preventDefault();
+    const hit = placement(mark.dataset.id);
+    if (e.shiftKey && !e.altKey && isSwitchSymbol(hit) && !state.armedId && !state.tool) {
+      const pdf = clientToPdf(e.clientX, e.clientY);
+      state.drag = { type: "pick", id: hit.id, startX: pdf.x, startY: pdf.y };
+      capturePointer(e);
+      return;
+    }
     startMove(e, mark.dataset.id);
     return;
   }
@@ -2780,8 +3327,9 @@ function onPointerDown(e) {
     placeAt(e.clientX, e.clientY, e.shiftKey);
     return;
   }
-  if (state.selectedId) {
+  if (state.selectedId || state.picked.size) {
     state.selectedId = null;
+    state.picked = new Set();
     renderMarks();
     syncInspector();
     setStatus();
@@ -2821,6 +3369,15 @@ function onPointerMove(e) {
   }
   const drag = state.drag;
   if (!drag) return;
+  if (drag.type === "pick") {
+    const pdf = clientToPdf(e.clientX, e.clientY);
+    if (Math.hypot(pdf.x - drag.startX, pdf.y - drag.startY) < 0.6) return;
+    const id = drag.id;
+    const start = { x: drag.startX, y: drag.startY };
+    state.drag = null;
+    startMove(e, id, start);
+    return;
+  }
   if (drag.type === "pan") {
     state.panX = drag.panX + (e.clientX - drag.x);
     state.panY = drag.panY + (e.clientY - drag.y);
@@ -2872,6 +3429,10 @@ function onPointerMove(e) {
       drag.undo = false;
     }
     drag.moved = true;
+    if (drag.origins && drag.origins.length > 1 && !(isSegment(p) || isWhitebox(p))) {
+      moveWithGroup(drag, dx, dy, e.shiftKey);
+      return;
+    }
     if (isSegment(p) || isWhitebox(p)) {
       p.x1 = drag.origin.x1 + dx;
       p.y1 = drag.origin.y1 + dy;
@@ -2941,6 +3502,13 @@ function onPointerMove(e) {
 function onPointerUp() {
   const drag = state.drag;
   if (!drag) return;
+  if (drag.type === "pick") {
+    const id = drag.id;
+    state.drag = null;
+    viewport.classList.remove("panning");
+    togglePick(placement(id));
+    return;
+  }
   if (drag.type === "move" && drag.alt && !drag.moved) {
     const p = placement(drag.id);
     if (p) {
@@ -2955,6 +3523,19 @@ function onPointerUp() {
         p.y += shift;
       }
       updateMark(p);
+    }
+  }
+  if (drag.type === "move" && !drag.moved && !drag.alt) {
+    const nextId = nextStackedId(drag.stack, drag.previousId);
+    if (nextId) {
+      state.selectedId = nextId;
+      state.picked = new Set();
+      state.drag = null;
+      viewport.classList.remove("panning");
+      renderMarks();
+      syncInspector();
+      setStatus();
+      return;
     }
   }
   const changed = drag.moved || drag.type === "rotate";
@@ -3000,6 +3581,8 @@ function setStatus() {
     else if (selected() && selected().kind === "note") left = "Edit the note in the side panel. Drag it on the sheet.";
     else if (selected() && selected().kind === "legend") left = "Drag the legend. The slider changes its width.";
     else if (selected() && selected().kind === "whitebox") left = "Drag the white box to move it. Drag a corner to resize it.";
+    else if (selected() && selected().groupId && groupMembers(selected().groupId).length >= 2) left = "Drag moves every switch in this box. Each one still takes its own dashed line.";
+    else if (pickedSwitches().length >= 2) left = "Group switches packs the blue-outlined switches into one box.";
     else if (selected()) left = "Drag to move. Drag the amber handle to rotate.";
     else left = "Pick a symbol, then click the plan.";
   }
@@ -3007,6 +3590,7 @@ function setStatus() {
   if (!state.doc) $("statusMid").textContent = "";
   if (!state.doc) {
     $("statusRight").textContent = "";
+    setSaveStatus("", false);
     return;
   }
   const here = state.placements.filter((item) => item.page === state.pageIndex).length;
@@ -3051,6 +3635,12 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
     state.calibDraft = null;
     state.undo = [];
     state.redo = [];
+    state.picked = new Set();
+    state.pendingRecovery = null;
+    state.browserSavedAt = "";
+    const recoverBar = $("recoverBar");
+    if (recoverBar) recoverBar.hidden = true;
+    setSaveStatus("", false);
     state.imageKey = "";
     state.imageToken += 1;
     showWorkspace();
@@ -3058,10 +3648,16 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
     renderPalette();
     const pending = state.pendingProject;
     state.pendingProject = null;
+    let appliedStamp = "";
+    let appliedPlacements = null;
+    let skipOffer = false;
     if (pending) {
+      skipOffer = true;
       applyProject(pending);
       toast("Loaded the marks file onto this plan.");
     } else if (info.project) {
+      appliedStamp = info.project.savedAt || "";
+      appliedPlacements = info.project.placements || [];
       applyProject(info.project, { quiet: true });
       toast("Opened a revision file. The marks are editable.");
     } else if (info.revisionWarning) {
@@ -3072,6 +3668,8 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
         try {
           const saved = JSON.parse(raw);
           const hasMarks = (saved.placements || []).length || saved.calibration;
+          appliedStamp = saved.savedAt || "";
+          appliedPlacements = saved.placements || [];
           if (hasMarks) {
             applyProject(saved, { quiet: true });
             toast("Restored marks saved in this browser for this PDF.");
@@ -3085,6 +3683,7 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
     }
     syncInspector();
     setStatus();
+    if (!skipOffer) await offerRecovery(info.id, appliedStamp, appliedPlacements);
   } catch (err) {
     toast(err.message);
   } finally {
@@ -3135,8 +3734,14 @@ async function openSample() {
   }
 }
 
-function saveProject() {
+async function saveProject() {
   if (!state.doc) return;
+  try {
+    localStorage.setItem("planmarks:manualAt:" + state.doc.id, String(Date.now()));
+  } catch (_err) {
+    /* private mode */
+  }
+  await writeRecovery(false);
   const base = state.doc.filename.replace(/\.pdf$/i, "") || "plan";
   const blob = new Blob([JSON.stringify(projectData(), null, 2)], { type: "application/json" });
   download(blob, base + "-marks.json");
@@ -3162,6 +3767,7 @@ async function exportPdf(revise) {
   finalBtn.disabled = true;
   (revise ? reviseBtn : finalBtn).textContent = "Exporting…";
   try {
+    await writeRecovery(false);
     const body = {
       placements: state.exportAllLayers ? state.placements : state.placements.filter(layerVisible),
       ocg: state.exportAllLayers,
@@ -3225,8 +3831,9 @@ function onKeyDown(e) {
       setStatus();
     } else if (state.tool) setTool(state.tool);
     else if (state.armedId) toggleArm(state.armedId);
-    else if (state.selectedId) {
+    else if (state.selectedId || state.picked.size) {
       state.selectedId = null;
+      state.picked = new Set();
       renderMarks();
       syncInspector();
       setStatus();
@@ -3317,6 +3924,23 @@ function onKeyDown(e) {
     const step = e.shiftKey ? 8 : 1;
     const dx = nudge[e.key][0] * step;
     const dy = nudge[e.key][1] * step;
+    const mates = p.groupId && isSwitchSymbol(p) ? groupMembers(p.groupId) : [p];
+    if (mates.length > 1) {
+      let wired = false;
+      for (const mate of mates) {
+        mate.x += dx;
+        mate.y += dy;
+        if (followAnchors(mate)) wired = true;
+      }
+      if (wired) renderWires();
+      for (const mate of mates) {
+        const el = marksLayer.querySelector(`.mark[data-id="${CSS.escape(mate.id)}"]`);
+        if (el) positionMark(el, mate);
+      }
+      paintGangBoxes();
+      scheduleSave();
+      return;
+    }
     if (isSegment(p) || isWhitebox(p)) {
       p.x1 += dx;
       p.y1 += dy;
@@ -3541,6 +4165,11 @@ function bind() {
     pushUndo();
     p.symbolId = $("symbolSelect").value;
     if (!state.ink) p.color = (symbolsById[p.symbolId] && symbolsById[p.symbolId].defaultColor) || "#141414";
+    if (!isSwitchSymbol(p)) {
+      delete p.groupId;
+      delete p.gang;
+    }
+    dissolveThinGroups();
     renderMarks();
     syncInspector();
     scheduleSave();
@@ -3566,6 +4195,17 @@ function bind() {
   });
   $("dupBtn").addEventListener("click", () => duplicateSelected());
   $("delBtn").addEventListener("click", () => deleteSelected());
+  $("groupBtn").addEventListener("click", () => groupSwitches());
+  $("ungroupBtn").addEventListener("click", () => ungroupSwitches());
+  $("recoverYes").addEventListener("click", () => restoreRecovery());
+  $("recoverNo").addEventListener("click", () => dismissRecovery());
+  startRecoveryTimer();
+  window.addEventListener("beforeunload", () => {
+    writeRecovery(true);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") writeRecovery(true);
+  });
 
   viewport.addEventListener("pointerdown", onPointerDown);
   viewport.addEventListener("contextmenu", (e) => e.preventDefault());
