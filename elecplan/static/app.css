@@ -603,3 +603,12 @@ dialog form { margin-top: 14px; text-align: right; }
   #panelSplit::before { left: 12px; right: 12px; top: 3px; width: auto; height: 1px; bottom: auto; }
   #inspector { grid-column: 1; grid-row: 4; }
 }
+#sheetsDialog p { color: var(--muted); line-height: 1.45; margin: 0; }
+#sheetsDialog form {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* Keep is first in the form, so Enter brings the sheets back. Drop stays on the left. */
+#sheetsDialog form button[value="drop"] { order: 1; }
+#sheetsDialog form button[value="keep"] { order: 2; }
