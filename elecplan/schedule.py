@@ -6,6 +6,8 @@ import math
 
 import pymupdf
 
+from elecplan.pdftext import fit_text
+
 
 def _cell(value, limit: int, label: str) -> str:
     if not isinstance(value, str):
@@ -44,16 +46,6 @@ def parse_schedule_rows(raw) -> list[dict]:
             {"circuit": circuit, "description": description, "count": count, "notes": notes}
         )
     return rows
-
-
-def _fit(text: str, fontsize: float, max_width: float, fontname: str = "helv") -> str:
-    if pymupdf.get_text_length(text, fontname=fontname, fontsize=fontsize) <= max_width:
-        return text
-    trimmed = text
-    while trimmed and pymupdf.get_text_length(trimmed + "...", fontname=fontname, fontsize=fontsize) > max_width:
-        trimmed = trimmed[:-1]
-    trimmed = trimmed.rstrip() or text[:1]
-    return trimmed + "..."
 
 
 def build_schedule_pdf(rows: list[dict], width: float, height: float, subtitle: str) -> bytes:
@@ -133,10 +125,10 @@ def build_schedule_pdf(rows: list[dict], width: float, height: float, subtitle: 
             chunk = rows[page_index * per_page : (page_index + 1) * per_page]
             for index, row in enumerate(chunk):
                 y = top + index * row_h
-                circuit = _fit(row["circuit"], size, circuit_w, "hebo")
-                description = _fit(row["description"], size, desc_w)
+                circuit = fit_text(row["circuit"], size, circuit_w, "hebo")
+                description = fit_text(row["description"], size, desc_w)
                 count = str(row["count"])
-                notes = _fit(row["notes"], size, notes_w) if row["notes"] else ""
+                notes = fit_text(row["notes"], size, notes_w) if row["notes"] else ""
                 page.insert_text(pymupdf.Point(margin, y), circuit, fontsize=size, fontname="hebo", color=ink)
                 page.insert_text(
                     pymupdf.Point(margin + circuit_w + gap, y),

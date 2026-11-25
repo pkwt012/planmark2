@@ -601,6 +601,33 @@ def _draw_whitebox(page, item: dict, oc: int = 0) -> None:
     )
 
 
+def _erase_under_whiteboxes(doc: pymupdf.Document, boxes: list[dict]) -> None:
+    """Remove what is under each white box from the sheet itself.
+
+    Painting white only hides the plan. The text, scanned pixels, and line
+    work stay in the file, and anyone can select or uncover them. Redaction
+    deletes text and image pixels under the box and any line work the box
+    fully covers. A wall that only crosses the box is kept, so it does not
+    vanish outside the box; the white paint still hides that part.
+    """
+    by_page: dict[int, list[dict]] = {}
+    for item in boxes:
+        by_page.setdefault(int(item["page"]), []).append(item)
+    for index, items in by_page.items():
+        page = doc[index]
+        matrix = page.derotation_matrix
+        for item in items:
+            x1, y1 = float(item["x1"]), float(item["y1"])
+            x2, y2 = float(item["x2"]), float(item["y2"])
+            rect = pymupdf.Rect(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) * matrix
+            rect.normalize()
+            page.add_redact_annot(rect, fill=(1, 1, 1))
+        page.apply_redactions(
+            images=pymupdf.PDF_REDACT_IMAGE_PIXELS,
+            graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED,
+        )
+
+
 def _draw_circuit_tag(page, x: float, y: float, text: str, oc: int = 0) -> None:
     """Tiny circuit id. x, y is the visual baseline."""
     label = str(text or "").strip()
@@ -661,8 +688,11 @@ def export_pdf(
     y downward, units in PDF points. Page rotation (/Rotate) is honored.
     A placement is a symbol unless kind is "line", "arrow", "note", "run",
     "legend", or "whitebox". White rectangles are drawn first, so they cover
-    the original sheet and the symbols stay on top. The source bytes are not
-    modified. When ocg is set, each layer is an optional content group.
+    the original sheet and the symbols stay on top. A flat final export also
+    erases the text and image pixels under them. Export all layers paints the
+    box into its group instead, so turning that group off shows the plan again.
+    The source bytes are not modified. When ocg is set, each layer is an
+    optional content group.
     A revision file also carries the unmarked PDF and the marks, so Plan Marks
     can open it and keep the marks editable.
     """
@@ -700,6 +730,12 @@ def export_pdf(
         # White boxes cover the underlay. Everything else is drawn after them.
         ordered = [item for item in drawing if item.get("kind") == "whitebox"]
         ordered.extend(item for item in drawing if item.get("kind") != "whitebox")
+        if not revise and not ocg:
+            # A flat final export goes out to other people, so a white box erases.
+            # Hidden boxes are already left out of this list.
+            # Export all layers keeps the bytes, and the white paint lives in the group.
+            erase = [item for item in ordered if item.get("kind") == "whitebox"]
+            _erase_under_whiteboxes(doc, erase)
         hop_map = crossing_hops(ordered)
         for index, item in enumerate(ordered):
             page = doc[item["page"]]

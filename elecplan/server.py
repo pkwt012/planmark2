@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
+import os
 import re
 import sys
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 from collections import OrderedDict
@@ -33,7 +36,9 @@ from elecplan.sample_plan import build_sample_pdf
 STATIC = project_root() / "elecplan" / "static"
 MAX_PDF_BYTES = 80 * 1024 * 1024
 MAX_RECOVERY_BYTES = 8 * 1024 * 1024
+RECOVERY_KEEP_DAYS = 90
 _PDF_ID = re.compile(r"^[0-9a-f]{16}$")
+_RECOVERY_FILE = re.compile(r"^[0-9a-f]{16}\.(json|pdf)(\.tmp)?$")
 _PAGE_PATH = re.compile(r"/api/page/(\d+)\.png")
 _FITZ = threading.Lock()
 
@@ -71,13 +76,88 @@ def _export_name(filename: str, revise: bool) -> str:
 
 
 def recovery_dir() -> Path:
-    """Folder of JSON recovery files. Next to the program, or the project folder."""
-    if getattr(sys, "frozen", False):
+    """Folder of recovery files. Next to the program, or the project folder.
+
+    PLANMARKS_RECOVERY_DIR points it somewhere else, which the self-test uses
+    so it never touches real recovery files.
+    """
+    override = os.environ.get("PLANMARKS_RECOVERY_DIR")
+    if override:
+        folder = Path(override)
+    elif getattr(sys, "frozen", False):
         folder = Path(sys.executable).resolve().parent / "planmarks-recovery"
     else:
         folder = project_root() / "planmarks-recovery"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def prune_recovery(days: float = RECOVERY_KEEP_DAYS) -> int:
+    """Delete recovery files not touched in this many days. Returns how many."""
+    try:
+        folder = recovery_dir()
+    except OSError:
+        return 0
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for path in folder.iterdir():
+        if not _RECOVERY_FILE.fullmatch(path.name):
+            continue
+        try:
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+
+
+def _sheets_path(pdf_id: str) -> Path:
+    if not isinstance(pdf_id, str) or not _PDF_ID.fullmatch(pdf_id):
+        raise ValueError("bad id")
+    return recovery_dir() / f"{pdf_id}.pdf"
+
+
+def save_sheets(pdf_id: str, data: bytes) -> None:
+    """Keep the plan with its added sheets, so reopening the original brings them back.
+
+    A plan over 80 MB is not kept. An older copy is removed so the next open
+    does not offer sheets that no longer match.
+    """
+    if len(data) > MAX_PDF_BYTES:
+        discard_sheets(pdf_id)
+        raise ValueError(
+            "The added sheets are larger than 80 MB, so they were not kept for next time. "
+            "Use Export to revise before you close."
+        )
+    _write_atomic(_sheets_path(pdf_id), data)
+
+
+def load_sheets(pdf_id: str) -> bytes | None:
+    try:
+        path = _sheets_path(pdf_id)
+        if not path.is_file():
+            return None
+        if path.stat().st_size > MAX_PDF_BYTES:
+            path.unlink(missing_ok=True)
+            return None
+        data = path.read_bytes()
+    except (OSError, ValueError):
+        return None
+    return data if data.startswith(b"%PDF") else None
+
+
+def discard_sheets(pdf_id: str) -> None:
+    try:
+        _sheets_path(pdf_id).unlink(missing_ok=True)
+    except (OSError, ValueError):
+        return
 
 
 def save_recovery(payload: dict) -> dict:
@@ -92,9 +172,7 @@ def save_recovery(payload: dict) -> dict:
     if len(text.encode("utf-8")) > MAX_RECOVERY_BYTES:
         raise ValueError("That recovery file is too large.")
     path = recovery_dir() / f"{pdf_id}.json"
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    _write_atomic(path, text.encode("utf-8"))
     return {"savedAt": stored["savedAt"], "file": path.name, "folder": "planmarks-recovery"}
 
 
@@ -181,8 +259,26 @@ class Session:
         self.doc = doc
         self.data = data
         self.filename = filename
+        # The id is taken from the file as opened and stays put when sheets
+        # are added, so autosave and recovery still match the original PDF.
         self.doc_id = hashlib.sha256(data).hexdigest()[:16]
         self.cache.clear()
+
+    def _offer_saved_sheets(self, extra: dict) -> None:
+        """Note sheets added to this plan last time. Caller holds _FITZ."""
+        stored = load_sheets(self.doc_id)
+        if stored is None or self.doc is None:
+            return
+        try:
+            other = pymupdf.open(stream=stored, filetype="pdf")
+        except Exception:
+            return
+        try:
+            added = other.page_count - self.doc.page_count
+        finally:
+            other.close()
+        if added > 0:
+            extra["savedSheets"] = {"added": added}
 
     def open_pdf(self, data: bytes, filename: str) -> dict:
         if not data:
@@ -228,9 +324,89 @@ class Session:
                 extra["project"] = project
             else:
                 self._remember(doc, data, _safe_name(filename))
+            self._offer_saved_sheets(extra)
         info = self.info()
         info.update(extra)
         return info
+
+    def restore_sheets(self) -> dict:
+        """Swap in the plan with the sheets that were added last time."""
+        if self.doc is None:
+            raise ValueError("No PDF is open")
+        stored = load_sheets(self.doc_id)
+        if stored is None:
+            raise ValueError("The added sheets could not be found")
+        with _FITZ:
+            try:
+                other = pymupdf.open(stream=stored, filetype="pdf")
+            except Exception as exc:
+                raise ValueError("The added sheets could not be read") from exc
+            if other.page_count <= self.doc.page_count:
+                other.close()
+                raise ValueError("The added sheets could not be found")
+            self.doc.close()
+            self.doc = other
+            self.data = stored
+            self.cache.clear()
+        return self.info()
+
+    def discard_sheets(self) -> None:
+        if self.doc is None:
+            raise ValueError("No PDF is open")
+        discard_sheets(self.doc_id)
+
+    def _append_bytes(self, raw: bytes) -> tuple[int, str]:
+        """Add every page of raw to the plan. Caller holds _FITZ.
+
+        Returns the page count added and a warning when the combined plan
+        could not be kept in the recovery folder.
+        """
+        assert self.doc is not None
+        try:
+            other = pymupdf.open(stream=raw, filetype="pdf")
+        except Exception as exc:
+            raise ValueError("Could not open that file as a PDF") from exc
+        try:
+            if other.needs_pass and not other.authenticate(""):
+                raise ValueError("That PDF is password-protected. Remove the password and try again.")
+            if other.page_count < 1:
+                raise ValueError("That PDF has no pages")
+            added = other.page_count
+            self.doc.insert_pdf(other)
+        finally:
+            other.close()
+        self.data = self.doc.tobytes(deflate=True, garbage=3)
+        self.cache.clear()
+        warning = ""
+        try:
+            save_sheets(self.doc_id, self.data)
+        except OSError as exc:
+            print(f"could not keep the added sheets: {exc}", file=sys.stderr)
+            warning = "The added sheets could not be saved for next time. Use Export to revise before you close."
+        except ValueError as exc:
+            warning = str(exc)
+        return added, warning
+
+    def _appended(self, raw: bytes) -> dict:
+        with _FITZ:
+            added, warning = self._append_bytes(raw)
+        info = self.info()
+        info["added"] = added
+        if warning:
+            info["sheetsWarning"] = warning
+        return info
+
+    def _sheet_subtitle(self, scope: str, page_index: int) -> tuple[pymupdf.Page, str]:
+        """Page to size a generated sheet from, and its subtitle. Caller holds _FITZ."""
+        assert self.doc is not None
+        if page_index < 0 or page_index >= self.doc.page_count:
+            page_index = 0
+        page = self.doc[page_index]
+        if scope == "all":
+            return page, "All sheets"
+        number = str(page_index + 1)
+        label = (page.get_label() or "").strip()
+        return page, label if label and label != number else f"Sheet {number}"
 
     def append_pdf(self, data: bytes) -> dict:
         if self.doc is None or self.data is None:
@@ -239,26 +415,7 @@ class Session:
             raise ValueError("That file is empty")
         if len(data) > MAX_PDF_BYTES:
             raise ValueError("That PDF is larger than 80 MB")
-        with _FITZ:
-            try:
-                other = pymupdf.open(stream=data, filetype="pdf")
-            except Exception as exc:
-                raise ValueError("Could not open that file as a PDF") from exc
-            try:
-                if other.needs_pass and not other.authenticate(""):
-                    raise ValueError("That PDF is password-protected. Remove the password and try again.")
-                if other.page_count < 1:
-                    raise ValueError("That PDF has no pages")
-                added = other.page_count
-                self.doc.insert_pdf(other)
-                self.data = self.doc.tobytes(deflate=True, garbage=3)
-                self.doc_id = hashlib.sha256(self.data).hexdigest()[:16]
-                self.cache.clear()
-            finally:
-                other.close()
-        payload = self.info()
-        payload["added"] = added
-        return payload
+        return self._appended(data)
 
     def append_legend(self, symbols, hidden_layers=None) -> dict:
         if self.doc is None or self.data is None:
@@ -269,96 +426,43 @@ class Session:
         with _FITZ:
             rect = self.doc[0].rect
             legend = build_legend_pdf(symbols, rect.width, rect.height)
-            other = pymupdf.open(stream=legend, filetype="pdf")
-            try:
-                added = other.page_count
-                self.doc.insert_pdf(other)
-                self.data = self.doc.tobytes(deflate=True, garbage=3)
-                self.doc_id = hashlib.sha256(self.data).hexdigest()[:16]
-                self.cache.clear()
-            finally:
-                other.close()
-        payload = self.info()
-        payload["added"] = added
-        return payload
+        return self._appended(legend)
+
+    def _sheet_request(self, payload, what: str) -> tuple[str, int]:
+        if not isinstance(payload, dict):
+            raise ValueError(f"{what} must be an object")
+        scope = payload.get("scope") or "sheet"
+        if scope not in ("sheet", "all"):
+            raise ValueError(f"bad {what} scope")
+        try:
+            page_index = int(payload.get("page") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"bad {what} page") from exc
+        return scope, page_index
 
     def append_counts(self, payload: dict) -> dict:
         if self.doc is None or self.data is None:
             raise ValueError("Open a PDF before adding a counts sheet")
-        if not isinstance(payload, dict):
-            raise ValueError("counts must be an object")
-        scope = payload.get("scope") or "sheet"
-        if scope not in ("sheet", "all"):
-            raise ValueError("bad counts scope")
+        scope, page_index = self._sheet_request(payload, "counts")
         rows = parse_count_rows(payload.get("rows"))
         if not rows:
             raise ValueError("There are no symbols to count")
-        try:
-            page_index = int(payload.get("page") or 0)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("bad counts page") from exc
         with _FITZ:
-            if page_index < 0 or page_index >= self.doc.page_count:
-                page_index = 0
-            page = self.doc[page_index]
-            if scope == "all":
-                subtitle = "All sheets"
-            else:
-                number = str(page_index + 1)
-                label = (page.get_label() or "").strip()
-                subtitle = label if label and label != number else f"Sheet {number}"
+            page, subtitle = self._sheet_subtitle(scope, page_index)
             raw = build_counts_pdf(rows, page.rect.width, page.rect.height, subtitle)
-            other = pymupdf.open(stream=raw, filetype="pdf")
-            try:
-                added = other.page_count
-                self.doc.insert_pdf(other)
-                self.data = self.doc.tobytes(deflate=True, garbage=3)
-                self.doc_id = hashlib.sha256(self.data).hexdigest()[:16]
-                self.cache.clear()
-            finally:
-                other.close()
-        info = self.info()
-        info["added"] = added
-        return info
+        return self._appended(raw)
 
     def append_schedule(self, payload: dict) -> dict:
         if self.doc is None or self.data is None:
             raise ValueError("Open a PDF before adding a schedule")
-        if not isinstance(payload, dict):
-            raise ValueError("schedule must be an object")
-        scope = payload.get("scope") or "sheet"
-        if scope not in ("sheet", "all"):
-            raise ValueError("bad schedule scope")
+        scope, page_index = self._sheet_request(payload, "schedule")
         rows = parse_schedule_rows(payload.get("rows"))
         if not rows:
             raise ValueError("There are no circuits to schedule")
-        try:
-            page_index = int(payload.get("page") or 0)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("bad schedule page") from exc
         with _FITZ:
-            if page_index < 0 or page_index >= self.doc.page_count:
-                page_index = 0
-            page = self.doc[page_index]
-            if scope == "all":
-                subtitle = "All sheets"
-            else:
-                number = str(page_index + 1)
-                label = (page.get_label() or "").strip()
-                subtitle = label if label and label != number else f"Sheet {number}"
+            page, subtitle = self._sheet_subtitle(scope, page_index)
             raw = build_schedule_pdf(rows, page.rect.width, page.rect.height, subtitle)
-            other = pymupdf.open(stream=raw, filetype="pdf")
-            try:
-                added = other.page_count
-                self.doc.insert_pdf(other)
-                self.data = self.doc.tobytes(deflate=True, garbage=3)
-                self.doc_id = hashlib.sha256(self.data).hexdigest()[:16]
-                self.cache.clear()
-            finally:
-                other.close()
-        info = self.info()
-        info["added"] = added
-        return info
+        return self._appended(raw)
 
     def render_page(self, index: int, dpi: float) -> bytes:
         with _FITZ:
@@ -449,6 +553,45 @@ class App:
         return self.sample_pdf
 
 
+_LOOPBACK_NAMES = ("localhost", "127.0.0.1", "::1")
+
+
+def _is_loopback(address: str) -> bool:
+    if address == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(address).is_loopback
+    except ValueError:
+        return False
+
+
+def _host_name(host: str) -> str:
+    """Host header without its port, lower case. [::1]:8765 gives ::1."""
+    host = (host or "").strip().lower()
+    if host.startswith("["):
+        return host[1 : host.find("]")] if "]" in host else ""
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def request_allowed(bound_host: str, path: str, headers) -> bool:
+    """Only this computer's browser, on this page, may use the server.
+
+    A web page open in another tab could otherwise post to the local port,
+    or read plan images through a DNS name pointed at 127.0.0.1.
+    """
+    host = headers.get("Host") or ""
+    if _is_loopback(bound_host) and _host_name(host) not in _LOOPBACK_NAMES:
+        return False
+    if path.startswith("/api/") or path == "/api":
+        if (headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+            return False
+        origin = headers.get("Origin")
+        if origin is not None:
+            if urlparse(origin).netloc.lower() != host.strip().lower():
+                return False
+    return True
+
+
 def _make_handler(app: App):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -461,7 +604,17 @@ def _make_handler(app: App):
             if code >= 400:
                 super().log_message(fmt, *args)
 
+        def _blocked(self) -> bool:
+            path = unquote(urlparse(self.path).path)
+            if request_allowed(self.server.server_address[0], path, self.headers):
+                return False
+            self.close_connection = True
+            self._json(403, {"error": "Plan Marks only answers its own page on this computer."})
+            return True
+
         def do_GET(self):
+            if self._blocked():
+                return
             try:
                 self._get()
             except Exception as exc:
@@ -469,6 +622,8 @@ def _make_handler(app: App):
                 self._json(500, {"error": str(exc) or "Something went wrong"})
 
         def do_POST(self):
+            if self._blocked():
+                return
             try:
                 self._post()
             except Exception as exc:
@@ -535,6 +690,8 @@ def _make_handler(app: App):
             query = parse_qs(parsed.query)
             length = int(self.headers.get("Content-Length", "0") or 0)
             if length < 0 or length > MAX_PDF_BYTES + 2_000_000:
+                # The body is not read, so this connection cannot be reused.
+                self.close_connection = True
                 self._json(413, {"error": "Upload is too large"})
                 return
             body = self.rfile.read(length) if length else b""
@@ -589,6 +746,23 @@ def _make_handler(app: App):
                     return
                 print(f"added schedule ({info.get('added', 0)} sheets)")
                 self._json(200, info)
+                return
+            if path == "/api/sheets/restore":
+                try:
+                    info = app.session.restore_sheets()
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+                print(f"brought back added sheets ({info['pageCount']} sheets)")
+                self._json(200, info)
+                return
+            if path == "/api/sheets/discard":
+                try:
+                    app.session.discard_sheets()
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+                self._json(200, {"ok": True})
                 return
             if path == "/api/recover":
                 try:

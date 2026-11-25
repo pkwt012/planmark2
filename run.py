@@ -19,11 +19,11 @@ ROOT = Path(__file__).resolve().parent
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(ROOT))
 
-from elecplan.server import App, make_server  # noqa: E402
+from elecplan.server import App, make_server, prune_recovery  # noqa: E402
 
 
 class _Silent:
-    """Windowed builds have no console, and the server logs every request."""
+    """Fallback when the log file cannot be written."""
 
     def write(self, _text: str) -> int:
         return 0
@@ -35,11 +35,32 @@ class _Silent:
         return False
 
 
+LOG_LIMIT = 1024 * 1024
+
+
+def _open_log():
+    """planmarks.log next to the program, started fresh once it passes 1 MB."""
+    try:
+        path = Path(sys.executable).resolve().parent / "planmarks.log"
+        mode = "w" if path.is_file() and path.stat().st_size > LOG_LIMIT else "a"
+        log = open(path, mode, encoding="utf-8", buffering=1, errors="replace")
+    except OSError:
+        return None
+    from datetime import datetime
+
+    log.write(f"\n--- Plan Marks started {datetime.now():%Y-%m-%d %H:%M:%S} ---\n")
+    return log
+
+
 def _ensure_stdio() -> None:
+    """Windowed builds have no console. Errors go to planmarks.log instead."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    log = _open_log() if getattr(sys, "frozen", False) else None
     if sys.stdout is None:
-        sys.stdout = _Silent()
+        sys.stdout = log or _Silent()
     if sys.stderr is None:
-        sys.stderr = _Silent()
+        sys.stderr = log or _Silent()
 
 
 def _self_check() -> None:
@@ -208,6 +229,9 @@ def main() -> None:
         _self_check()
         return
 
+    removed = prune_recovery()
+    if removed:
+        print(f"Removed {removed} recovery file{'s' if removed != 1 else ''} older than 90 days.")
     app = App()
     httpd = make_server(app, args.host, args.port)
     host, port = httpd.server_address[:2]

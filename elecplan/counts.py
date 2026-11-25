@@ -6,6 +6,8 @@ import math
 
 import pymupdf
 
+from elecplan.pdftext import fit_text
+
 
 def parse_count_rows(raw) -> list[dict]:
     """Name and count pairs for a counts sheet. Empty is allowed."""
@@ -31,16 +33,6 @@ def parse_count_rows(raw) -> list[dict]:
             raise ValueError("bad count")
         rows.append({"name": name, "count": count})
     return rows
-
-
-def _fit(text: str, fontsize: float, max_width: float, fontname: str = "helv") -> str:
-    if pymupdf.get_text_length(text, fontname=fontname, fontsize=fontsize) <= max_width:
-        return text
-    trimmed = text
-    while trimmed and pymupdf.get_text_length(trimmed + "...", fontname=fontname, fontsize=fontsize) > max_width:
-        trimmed = trimmed[:-1]
-    trimmed = trimmed.rstrip() or text[:1]
-    return trimmed + "..."
 
 
 def build_counts_pdf(rows: list[dict], width: float, height: float, subtitle: str) -> bytes:
@@ -115,7 +107,7 @@ def build_counts_pdf(rows: list[dict], width: float, height: float, subtitle: st
                 fontname = "hebo" if row.get("total") else "helv"
                 count = str(row["count"])
                 count_w = pymupdf.get_text_length(count, fontname=fontname, fontsize=name_size)
-                name = _fit(row["name"], name_size, max(8.0, col_w - count_w - gap), fontname)
+                name = fit_text(row["name"], name_size, max(8.0, col_w - count_w - gap), fontname)
                 page.insert_text(pymupdf.Point(x, y), name, fontsize=name_size, fontname=fontname, color=ink)
                 page.insert_text(
                     pymupdf.Point(x + col_w - count_w, y),
