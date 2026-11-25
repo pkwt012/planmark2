@@ -126,6 +126,15 @@
       "hint": "Outlet marked 20A. Rotate it so the bars follow the wall."
     },
     {
+      "id": "outlet48",
+      "name": "48\" outlet",
+      "category": "receptacles",
+      "file": "outlet48.svg",
+      "wall": true,
+      "keywords": "48 inch 48in height outlet above floor",
+      "hint": "Outlet marked 48 inches. Rotate it so the bars follow the wall."
+    },
+    {
       "id": "gfci20",
       "name": "20A GFCI",
       "category": "receptacles",

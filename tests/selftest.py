@@ -176,6 +176,7 @@ def main():
         "humidity": ("switches", True),
         "wifi": ("switches", True),
         "duplex20": ("receptacles", True),
+        "outlet48": ("receptacles", True),
         "gfci20": ("receptacles", True),
         "halfhot": ("receptacles", True),
         "clock": ("receptacles", True),
@@ -211,6 +212,7 @@ def main():
     check("added symbols keep their group", not misplaced, str(misplaced))
     check("occupancy switch is OCC", ">OCC<" in by["occ"]["svg"] and "<circle" not in by["occ"]["svg"])
     check("20A duplex is labeled", ">20A<" in by["duplex20"]["svg"] and "<circle" in by["duplex20"]["svg"])
+    check("48 inch outlet is labeled", '>48"<' in by["outlet48"]["svg"] and "<circle" in by["outlet48"]["svg"])
     check("20A gfi is its own outlet", ">20A GFI<" in by["gfci20"]["svg"] and by["gfci20"]["svg"] != gfci["svg"])
     check("cans keep their sizes", '>4"<' in by["recessed4"]["svg"] and '>6"<' in by["recessed6"]["svg"])
     check("camera is low voltage", by["camera"]["defaultColor"] == "#1d4e89" and "<rect" in by["camera"]["svg"])

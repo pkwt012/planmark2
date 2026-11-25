@@ -45,7 +45,7 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Circuit** is an optional label on a symbol, dashed line, run, or note. **Circuits** in the header shows that label on the sheet. **Add schedule sheet** lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to, when it does not already have one.
 - **Floor plug**, **flood light**, **eave plug**, **patio heater**, and **floor heat** are in the symbol list.
 - **Generator** is a box marked GEN.
-- The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.
+- The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A, half-hot, and 48 in outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.
 - **Under cabinet 120V** and **LED tape light** are runs. Click one end, then the other. A solid line with end bars is drawn between the clicks, and 120V or TAPE sits under the line. The tool stays armed. Esc cancels the run, then puts it away.
 - **Apply size to all** copies the selected symbol’s size onto the other marks of that type. Choose this sheet or every sheet. Undo puts the old sizes back. Notes, arrows, dashed lines, legends, and runs are left alone.
 - **Counts** lists how many of each symbol are placed. Switch between this sheet and all sheets. **Add counts sheet** puts that list on a new page of the plan.
