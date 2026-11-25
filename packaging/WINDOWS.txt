@@ -11,3 +11,5 @@ Choose More info, then Run anyway.
 Your PDFs stay on this computer. Nothing is uploaded.
 
 Marks are also written to a planmarks-recovery folder next to PlanMarks.exe.
+Sheets you add are kept there too. Opening the original PDF asks whether to bring them back.
+Files in that folder that sit unused for 90 days are removed when Plan Marks starts.

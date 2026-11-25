@@ -38,6 +38,7 @@ jobs:
           if ($exe.Length -lt 1MB) { throw "PlanMarks.exe is unexpectedly small" }
           if (!(Test-Path dist\PlanMarks\_internal\symbols\catalog.json)) { throw "symbols were not packaged" }
           if (!(Test-Path dist\PlanMarks\_internal\elecplan\static\index.html)) { throw "the page was not packaged" }
+          if (!(Test-Path dist\PlanMarks\_internal\elecplan\static\core.js)) { throw "page scripts were not packaged" }
           $dll = Get-ChildItem -Recurse dist\PlanMarks\_internal -Filter mupdfcpp64.dll
           if (-not $dll) { throw "MuPDF library was not packaged" }
 
@@ -66,21 +67,21 @@ jobs:
           path: PlanMarks-Windows.zip
 
       - name: Publish the download
-        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.3')) }}"
+        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.4')) }}"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.3
-          name: Plan Marks 2.3
+          tag_name: v2.4
+          name: Plan Marks 2.4
           make_latest: "true"
           files: PlanMarks-Windows.zip
           body: |
-            Plan Marks 2.3. Unzip the folder, then double-click PlanMarks.exe.
+            Plan Marks 2.4. Unzip the folder, then double-click PlanMarks.exe.
             Leave the small Plan Marks window open while you work. Close it to quit.
             Keep PlanMarks.exe and the _internal folder together.
             Your PDFs stay on this computer.
             If Windows says it protected your PC, choose More info, then Run anyway.
 
-            Marks are saved in this browser and, about every 75 seconds, in a planmarks-recovery folder next to PlanMarks.exe. Closing the tab writes that file too. Opening the plan offers to restore a newer copy.
-            Group switches packs two to five switches tightly. Each switch still takes its own dashed line.
-            A dashed line or run hops over an earlier crossing.
-            A symbol is clicked in its center. Click the same spot again when two symbols overlap.
+            Sheets you add are kept, and opening the original PDF asks whether to bring them back.
+            Export final erases the text and scanned image under a white box. Export all layers paints that box in its layer, so turning the layer off shows the plan again.
+            Recovery files that sit unused for 90 days are removed when the program starts.
+            Marks are saved in this browser and, about every 75 seconds, in a planmarks-recovery folder next to PlanMarks.exe.

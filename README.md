@@ -6,7 +6,7 @@ Open a plan, click a symbol, then click the sheet. Drag a mark to move it, drag 
 
 ## Windows
 
-Download [Plan Marks 2.3 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.3/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together.
+Download [Plan Marks 2.4 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.4/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together. If something goes wrong, `planmarks.log` next to `PlanMarks.exe` has the details.
 
 Windows may say it protected your PC, because the program is not signed. Choose More info, then Run anyway.
 
@@ -29,7 +29,7 @@ py -3 -m PyInstaller packaging\planmarks.spec
 
 The program is in `dist\PlanMarks\`.
 
-PyMuPDF is the only dependency. There is no account, no upload, and no network call except the browser talking to this local server.
+PyMuPDF is the only dependency. There is no account, no upload, and no network call except the browser talking to this local server. The server only answers its own page on this computer, so another website open in the browser cannot read or change your plan.
 
 ## Use
 
@@ -39,7 +39,7 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Dashed line** draws a switch leg between lights. Click the first point, then the next. It stays armed so you can draw another. An end snapped onto a symbol stays attached when that symbol moves. A blue end is attached. Drag that end off the symbol, or drag the line itself, to disconnect it. Deleting the symbol also releases the line. Esc cancels the segment, then puts the tool away. Where a dashed line or a run crosses another, the one drawn later hops over it.
 - **Group switches** packs two to five nearby switches into one multi-gang box, about 0.6 of a symbol apart. Shift-click each switch, then Group switches. Each switch still takes its own dashed line. Dragging one moves the box. Ungroup separates them.
 - **Light layout** draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line, and the symbol snaps onto it.
-- **White box** covers part of the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, and drag an amber corner to resize it. Export paints these rectangles before the symbols, so they cover the original sheet and the symbols stay on top. The original PDF is not changed.
+- **White box** covers part of the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, and drag an amber corner to resize it. Export paints these rectangles before the symbols, so they cover the original sheet and the symbols stay on top. **Export final** also erases the text and scanned image under each box, so nobody can select, copy, or uncover it. Line work that only crosses a box is kept, so a wall does not disappear outside the box. **Export all layers** paints the box in its layer instead, so turning that layer off shows the plan again. **Export to revise** keeps the sheet whole so you can keep editing. A box on a hidden layer only covers. The original PDF is not changed.
 - **Snap to plan lines** pulls a new or dragged symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without that snap. A construction line still catches a symbol.
 - **Layers** are Power, Lighting, Low-volt, Circuitry, or a name you type on the selected mark. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new marks go on that layer. **Export all layers** writes each layer as a group you can turn on in the PDF. Hidden layers start off.
 - **Circuit** is an optional label on a symbol, dashed line, run, or note. **Circuits** in the header shows that label on the sheet. **Add schedule sheet** lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to, when it does not already have one.
@@ -55,7 +55,7 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Duplicate**, **Delete**, or the size slider edit the selected mark. Small / Medium / Large set a paper size. **1 ft** (after calibration) makes the symbol box one foot on the plan.
 - **Calibrate**: click two ends of a known length, enter that length, and Apply. The sample's living-room dimension is 10 feet.
 - **Export to revise** writes a marked PDF you can open again and keep editing. **Export final** draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing. The original plan stays vector; symbols are vector too.
-- **Save** writes a JSON marks file. **Load** puts those marks back. The same PDF also restores marks automatically in this browser. About every 75 seconds, and when the tab closes, a copy is written in the `planmarks-recovery` folder next to the program (or the project folder when you run from source). Opening that plan offers to restore a newer copy. Export writes a recovery file first. That JSON loads with **Load**.
+- **Save** writes a JSON marks file. **Load** puts those marks back. The same PDF also restores marks automatically in this browser. About every 75 seconds, and when the tab closes, a copy is written in the `planmarks-recovery` folder next to the program (or the project folder when you run from source). Opening that plan offers to restore a newer copy. Export writes a recovery file first. That JSON loads with **Load**. Sheets you add (more pages, a legend, counts, or a schedule) are kept in the same folder, and opening the original PDF again asks whether to bring them back with their marks. Recovery files not used for 90 days are removed when the program starts.
 
 Wheel zooms, and the zoom percentage is paper size (100% is actual size). Right-drag or Space-drag pans. Fit and the percentage button are in the header. The **?** button lists shortcuts.
 
