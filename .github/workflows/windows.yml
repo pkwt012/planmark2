@@ -67,20 +67,22 @@ jobs:
           path: PlanMarks-Windows.zip
 
       - name: Publish the download
-        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.4')) }}"
+        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.5')) }}"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4
-          name: Plan Marks 2.4
+          tag_name: v2.5
+          name: Plan Marks 2.5
           make_latest: "true"
           files: PlanMarks-Windows.zip
           body: |
-            Plan Marks 2.4. Unzip the folder, then double-click PlanMarks.exe.
+            Plan Marks 2.5. Unzip the folder, then double-click PlanMarks.exe.
             Leave the small Plan Marks window open while you work. Close it to quit.
             Keep PlanMarks.exe and the _internal folder together.
             Your PDFs stay on this computer.
             If Windows says it protected your PC, choose More info, then Run anyway.
 
+            The symbol list adds step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A, half-hot, and 48 in outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.
+            A legend lists the symbols placed on the plan. A hidden layer stays off it.
             Sheets you add are kept, and opening the original PDF asks whether to bring them back.
             Export final erases the text and scanned image under a white box. Export all layers paints that box in its layer, so turning the layer off shows the plan again.
             Recovery files that sit unused for 90 days are removed when the program starts.

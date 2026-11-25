@@ -6,7 +6,7 @@ Open a plan, click a symbol, then click the sheet. Drag a mark to move it, drag 
 
 ## Windows
 
-Download [Plan Marks 2.4 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.4/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together. If something goes wrong, `planmarks.log` next to `PlanMarks.exe` has the details.
+Download [Plan Marks 2.5 for Windows](https://github.com/pkwt012/planmark2/releases/download/v2.5/PlanMarks-Windows.zip). Unzip the folder and double-click `PlanMarks.exe`. Your browser opens the plan marker. Leave the small Plan Marks window open while you work, and close it to quit. Keep `PlanMarks.exe` and the `_internal` folder together. If something goes wrong, `planmarks.log` next to `PlanMarks.exe` has the details.
 
 Windows may say it protected your PC, because the program is not signed. Choose More info, then Run anyway.
 
