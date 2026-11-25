@@ -557,6 +557,10 @@ function placeLegend(pt) {
     toast("The legend is not available. Restart the app and try again.");
     return;
   }
+  if (!lay.items.length) {
+    toast("Place a symbol before adding a legend.");
+    return;
+  }
   if (!onSheet(pt, page)) return;
   let width = lay.width;
   let height = lay.height;
@@ -1165,7 +1169,7 @@ function setStatus() {
       left = sym ? `${sym.name}: click one end, then the other.` : "Click one end, then the other.";
     }
     else if (state.tool === "note") left = "Note: click the sheet, then type. Esc puts the tool away.";
-    else if (state.tool === "legend") left = "Click the sheet to drop the legend.";
+    else if (state.tool === "legend") left = "Click the sheet to drop a key of the symbols on the plan.";
     else if (state.armedId) {
       const sym = symbolsById[state.armedId];
       const name = sym ? sym.name : "symbol";

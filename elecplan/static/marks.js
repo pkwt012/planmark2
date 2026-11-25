@@ -343,12 +343,20 @@ function layoutLegend(symbols) {
   };
 }
 
+function usedLegendSymbols() {
+  const used = new Set();
+  for (const item of state.placements) {
+    if (!layerVisible(item)) continue;
+    if (!(isSymbol(item) || item.kind === "run") || !item.symbolId) continue;
+    if (!symbolsById[item.symbolId]) continue;
+    used.add(item.symbolId);
+  }
+  return library.symbols.filter((sym) => used.has(sym.id));
+}
+
 function visibleLegendLayout() {
-  const lay = library.legend;
-  if (!lay) return null;
-  if (!state.hiddenLayers.size) return lay;
-  const symbols = library.symbols.filter((sym) => !state.hiddenLayers.has(symbolLayerName(sym)));
-  return layoutLegend(symbols);
+  if (!library || !Array.isArray(library.symbols)) return null;
+  return layoutLegend(usedLegendSymbols());
 }
 
 function legendBox(width) {

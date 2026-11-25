@@ -158,7 +158,7 @@ function syncInspector() {
   else if (state.tool === "run" && state.runDraft) hint.textContent = "Click the other end. Esc cancels this run.";
   else if (state.tool === "run") hint.textContent = (sym && sym.hint) || "Click one end, then the other. Esc puts the tool away.";
   else if (state.tool === "note") hint.textContent = "Click the sheet, then type a short label. A note is text, so it stays out of the symbol legend and the counts.";
-  else if (state.tool === "legend") hint.textContent = "Click the sheet to drop a legend of every symbol.";
+  else if (state.tool === "legend") hint.textContent = "Click the sheet to drop a key of the symbols placed on the plan.";
   else if (sym) hint.textContent = sym.hint || `Click the plan to place ${sym.name}. Esc puts the tool away.`;
   else if (p && p.kind === "line" && p.guide) hint.textContent = "Construction line. Click a symbol, then click the line to place it. Drag the line to move it.";
   else if (p && p.kind === "line") hint.textContent = p.a1 || p.a2
