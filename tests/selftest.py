@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import re
+import os
 import sys
+import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# Recovery files and kept sheets go to a scratch folder, not the real one.
+os.environ["PLANMARKS_RECOVERY_DIR"] = tempfile.mkdtemp(prefix="planmarks-test-")
 
 import pymupdf
 
@@ -19,7 +25,7 @@ from elecplan.export import crossing_hops, export_pdf, parse_placements
 from elecplan.legend import build_legend_block, build_legend_pdf, legend_layout
 from elecplan.library import load_symbols, prepare_svg
 from elecplan.sample_plan import build_sample_pdf
-from elecplan.server import App, Session, make_server, recovery_dir
+from elecplan.server import App, Session, make_server, prune_recovery, recovery_dir, request_allowed
 
 PASS = 0
 FAIL = 0
@@ -1149,6 +1155,7 @@ def main():
     base = f"http://{host}:{port}"
 
     status, _headers, body = request(base, "/")
+    home = body
     check("home page", status == 200 and b"Plan Marks" in body, str(status))
     check("layout help is a construction line", b"construction rectangle" in body)
     check("white box tool is on the page", b"White box" in body and b"Add schedule sheet" in body)
@@ -1157,7 +1164,23 @@ def main():
         "help notes recovery, gangs, and hops",
         b"planmarks-recovery" in body and b"Group switches" in body and b"hops over" in body and b"65%" in body,
     )
-    status, _headers, body = request(base, "/static/app.js")
+    keep_at = body.find(b'value="keep"')
+    drop_at = body.find(b'value="drop"')
+    check(
+        "bring sheets back is the default button",
+        b"autofocus" in body and keep_at != -1 and drop_at != -1 and keep_at < drop_at,
+    )
+    check(
+        "help notes saved sheets, 90 days, and layered white boxes",
+        b"90 days" in body and b"bring them back" in body and b"shows the plan again" in body,
+    )
+    scripts = re.findall(rb'<script src="(/static/[a-z]+\.js)"></script>', home)
+    check("page loads every script", len(scripts) == 6 and scripts[-1] == b"/static/app.js", str(scripts))
+    status, body = 200, b""
+    for src in scripts:
+        code, _headers, part = request(base, src.decode())
+        status = max(status, code)
+        body += part
     check(
         "script",
         status == 200
@@ -1495,6 +1518,197 @@ def main():
         folder = rec_path.parent
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
+
+    print("added sheets keep the plan id")
+    status, _headers, body = request(base, "/api/open?name=keep.pdf", data=sample, method="POST")
+    first = json.loads(body)
+    plan_id = first["id"]
+    kept = recovery_dir() / f"{plan_id}.pdf"
+    kept.unlink(missing_ok=True)
+    status, _headers, body = request(base, "/api/open?name=keep.pdf", data=sample, method="POST")
+    check("no kept sheets yet", status == 200 and "savedSheets" not in json.loads(body), body[:200])
+    status, _headers, body = request(base, "/api/append", data=one_bytes, method="POST")
+    grown = json.loads(body)
+    check("append keeps the id", status == 200 and grown["id"] == plan_id, body[:200])
+    check("append keeps the combined plan", kept.is_file() and kept.read_bytes().startswith(b"%PDF"))
+    status, _headers, body = request(
+        base,
+        "/api/counts",
+        data=json.dumps({"scope": "all", "rows": [{"name": "Duplex", "count": 2}]}).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    check("counts sheet keeps the id", status == 200 and json.loads(body)["id"] == plan_id, body[:200])
+    status, _headers, body = request(base, "/api/open?name=keep.pdf", data=sample, method="POST")
+    again = json.loads(body)
+    check(
+        "reopening offers the added sheets",
+        again["id"] == plan_id and again["pageCount"] == first["pageCount"] and again.get("savedSheets", {}).get("added") == 2,
+        body[:200],
+    )
+    status, _headers, body = request(base, "/api/sheets/restore", data=b"", method="POST")
+    back = json.loads(body)
+    check(
+        "restore brings the sheets back",
+        status == 200 and back["id"] == plan_id and back["pageCount"] == first["pageCount"] + 2,
+        body[:200],
+    )
+    status, _headers, png = request(base, f"/api/page/{back['pageCount'] - 1}.png?dpi=40")
+    check("restored sheet renders", status == 200 and png.startswith(b"\x89PNG"))
+    status, _headers, body = request(base, "/api/sheets/discard", data=b"", method="POST")
+    check("discard the added sheets", status == 200 and not kept.exists(), body[:200])
+    status, _headers, body = request(base, "/api/open?name=keep.pdf", data=sample, method="POST")
+    check("discarded sheets are not offered", "savedSheets" not in json.loads(body), body[:200])
+    status, _headers, body = request(base, "/api/sheets/restore", data=b"", method="POST")
+    check("restore with nothing kept", status == 400, body[:200])
+
+    print("added sheets over 80 MB are not kept quietly")
+    import elecplan.server as server_mod
+
+    old_limit = server_mod.MAX_PDF_BYTES
+    server_mod.MAX_PDF_BYTES = len(one_bytes) + 1
+    try:
+        status, _headers, body = request(base, "/api/append", data=one_bytes, method="POST")
+        warned = json.loads(body)
+        check(
+            "oversized added sheets warn",
+            status == 200 and "80 MB" in warned.get("sheetsWarning", "") and warned.get("added") == 1,
+            body[:240],
+        )
+        check("oversized added sheets are not stored", not (recovery_dir() / f"{plan_id}.pdf").exists())
+    finally:
+        server_mod.MAX_PDF_BYTES = old_limit
+    status, _headers, body = request(base, "/api/open?name=keep.pdf", data=sample, method="POST")
+    check("oversized sheets are not offered", status == 200 and "savedSheets" not in json.loads(body), body[:200])
+
+    print("white box erases on final export")
+
+    def words_in(page, rect):
+        return [w[4] for w in page.get_text("words") if pymupdf.Rect(w[:4]).intersects(rect)]
+
+    for spin in (0, 90):
+        src = pymupdf.open()
+        src_page = src.new_page(width=400, height=300)
+        src_page.insert_text((60, 100), "SECRET PRICE", fontsize=14)
+        src_page.insert_text((60, 220), "KEEP THIS", fontsize=14)
+        src_page.draw_line((20, 96), (380, 96), color=(0, 0, 0), width=1)
+        src_page.set_rotation(spin)
+        src_bytes = src.tobytes()
+        hit = pymupdf.Rect(next(w[:4] for w in src_page.get_text("words") if w[4] == "SECRET"))
+        hit |= pymupdf.Rect(next(w[:4] for w in src_page.get_text("words") if w[4] == "PRICE"))
+        seen = (hit * src_page.rotation_matrix).normalize()
+        src.close()
+        box = {
+            "kind": "whitebox",
+            "page": 0,
+            "x1": seen.x0 - 4,
+            "y1": seen.y0 - 4,
+            "x2": seen.x1 + 4,
+            "y2": seen.y1 + 4,
+        }
+        final = pymupdf.open(stream=export_pdf(src_bytes, [box], {}), filetype="pdf")
+        fpage = final[0]
+        text = fpage.get_text()
+        check(f"final erases the text under a box ({spin} deg)", "SECRET" not in text and "PRICE" not in text, text)
+        check(f"final keeps the text outside a box ({spin} deg)", "KEEP" in text, text)
+        long_lines = [
+            item
+            for path in fpage.get_drawings()
+            for item in path["items"]
+            if item[0] == "l" and abs(item[1] - item[2]) > 300
+        ]
+        check(f"final keeps a wall that crosses a box ({spin} deg)", len(long_lines) == 1, str(long_lines))
+        final.close()
+        revise = pymupdf.open(
+            stream=export_pdf(
+                src_bytes,
+                [box],
+                {},
+                revise=True,
+                project={"app": "plan-marks", "version": 1, "placements": []},
+            ),
+            filetype="pdf",
+        )
+        check(f"revise keeps the sheet whole ({spin} deg)", "SECRET" in revise[0].get_text())
+        revise.close()
+        hidden = pymupdf.open(
+            stream=export_pdf(src_bytes, [{**box, "layer": "Power"}], {}, ocg=True, hidden_layers=["Power"]),
+            filetype="pdf",
+        )
+        check(f"a box on a hidden layer does not erase ({spin} deg)", "SECRET" in hidden[0].get_text())
+        hidden.close()
+        layered = pymupdf.open(
+            stream=export_pdf(src_bytes, [{**box, "layer": "Power"}], {}, ocg=True),
+            filetype="pdf",
+        )
+        layered_page = layered[0]
+        white_fills = [
+            path
+            for path in layered_page.get_drawings()
+            if path.get("fill") and all(abs(channel - 1) < 0.01 for channel in path["fill"][:3])
+        ]
+        check(
+            f"export all layers keeps the text under a box ({spin} deg)",
+            "SECRET" in layered_page.get_text() and "PRICE" in layered_page.get_text(),
+            layered_page.get_text(),
+        )
+        check(
+            f"export all layers still paints the box ({spin} deg)",
+            len(white_fills) >= 1,
+            str(len(white_fills)),
+        )
+        layered.close()
+
+    print("requests from other sites")
+    loop = {"Host": "127.0.0.1:8765"}
+    check("own page is allowed", request_allowed("127.0.0.1", "/api/open", loop))
+    check("localhost is allowed", request_allowed("127.0.0.1", "/api/open", {"Host": "localhost:8765"}))
+    check("ipv6 loopback is allowed", request_allowed("::1", "/", {"Host": "[::1]:8765"}))
+    check(
+        "same origin post is allowed",
+        request_allowed("127.0.0.1", "/api/export", {**loop, "Origin": "http://127.0.0.1:8765", "Sec-Fetch-Site": "same-origin"}),
+    )
+    check("a renamed host is refused", not request_allowed("127.0.0.1", "/api/page/0.png", {"Host": "evil.example:8765"}))
+    check(
+        "another site is refused",
+        not request_allowed("127.0.0.1", "/api/open", {**loop, "Origin": "https://evil.example"}),
+    )
+    check(
+        "another local port is refused",
+        not request_allowed("127.0.0.1", "/api/recover", {**loop, "Origin": "http://127.0.0.1:3000"}),
+    )
+    check("a cross-site fetch is refused", not request_allowed("127.0.0.1", "/api/document", {**loop, "Sec-Fetch-Site": "cross-site"}))
+    check("a link to the home page still opens", request_allowed("127.0.0.1", "/", {**loop, "Sec-Fetch-Site": "cross-site"}))
+    check(
+        "a network host takes its own address",
+        request_allowed("0.0.0.0", "/api/open", {"Host": "192.168.1.20:8765", "Origin": "http://192.168.1.20:8765"}),
+    )
+    status, _headers, body = request(base, "/api/document", headers={"Host": "evil.example"})
+    check("server refuses a renamed host", status == 403, body[:160])
+    status, _headers, body = request(
+        base, "/api/recover", data=b"{}", method="POST", headers={"Origin": "https://evil.example", "Content-Type": "text/plain"}
+    )
+    check("server refuses another site's post", status == 403, body[:160])
+
+    print("old recovery files")
+    folder = recovery_dir()
+    stale = folder / "aaaaaaaaaaaaaaaa.json"
+    stale_pdf = folder / "aaaaaaaaaaaaaaaa.pdf"
+    fresh = folder / "bbbbbbbbbbbbbbbb.json"
+    other = folder / "notes.txt"
+    for path in (stale, stale_pdf, fresh, other):
+        path.write_text("{}", encoding="utf-8")
+    old = time.time() - 120 * 86400
+    for path in (stale, stale_pdf, other):
+        os.utime(path, (old, old))
+    removed = prune_recovery(90)
+    check(
+        "old recovery files are removed",
+        removed == 2 and not stale.exists() and not stale_pdf.exists() and fresh.exists() and other.exists(),
+        str(removed),
+    )
+    for path in (fresh, other):
+        path.unlink(missing_ok=True)
 
     httpd.shutdown()
     print()
