@@ -26,9 +26,8 @@ from elecplan.export import (
     clean_layer_list,
     export_pdf,
     parse_placements,
-    symbol_layer,
 )
-from elecplan.legend import build_legend_pdf, legend_layout
+from elecplan.legend import build_legend_pdf, choose_legend_symbols, legend_layout
 from elecplan.schedule import build_schedule_pdf, parse_schedule_rows
 from elecplan.library import load_symbols, project_root
 from elecplan.sample_plan import build_sample_pdf
@@ -417,15 +416,13 @@ class Session:
             raise ValueError("That PDF is larger than 80 MB")
         return self._appended(data)
 
-    def append_legend(self, symbols, hidden_layers=None) -> dict:
+    def append_legend(self, symbols, symbol_ids) -> dict:
         if self.doc is None or self.data is None:
             raise ValueError("Open a PDF before adding a legend")
-        hidden = set(hidden_layers or [])
-        if hidden:
-            symbols = [sym for sym in symbols if symbol_layer(sym) not in hidden]
+        chosen = choose_legend_symbols(symbols, symbol_ids)
         with _FITZ:
             rect = self.doc[0].rect
-            legend = build_legend_pdf(symbols, rect.width, rect.height)
+            legend = build_legend_pdf(chosen, rect.width, rect.height)
         return self._appended(legend)
 
     def _sheet_request(self, payload, what: str) -> tuple[str, int]:
@@ -719,8 +716,7 @@ def _make_handler(app: App):
                     payload = json.loads(body.decode("utf-8") or "{}") if body else {}
                     if not isinstance(payload, dict):
                         raise ValueError("legend must be an object")
-                    hidden = clean_layer_list(payload.get("hiddenLayers"))
-                    info = app.session.append_legend(app.library["symbols"], hidden)
+                    info = app.session.append_legend(app.library["symbols"], payload.get("symbolIds"))
                 except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                     self._json(400, {"error": str(exc)})
                     return

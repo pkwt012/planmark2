@@ -35,16 +35,6 @@ def _finite(*values: float) -> None:
         raise ValueError("non-numeric coordinate")
 
 
-def symbol_layer(sym: dict) -> str:
-    """Default trade layer for a library symbol."""
-    category = str(sym.get("category") or "")
-    if category in ("lighting", "switches"):
-        return "Lighting"
-    if category in ("lowvoltage", "safety"):
-        return "Low-volt"
-    return "Power"
-
-
 def _optional_text(value, label: str, limit: int) -> str | None:
     """A short label stored on a mark. Missing or blank is omitted."""
     if value is None:
@@ -664,11 +654,24 @@ def _stamp_legend(page, item: dict, src: pymupdf.Document, nat_w: float, nat_h: 
     )
 
 
-def _legend_symbols(symbols_by_id: dict, hidden: set[str], ocg: bool) -> list[dict]:
-    symbols = list(symbols_by_id.values())
-    if ocg or not hidden:
-        return symbols
-    return [sym for sym in symbols if symbol_layer(sym) not in hidden]
+def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str]) -> list[dict]:
+    """Symbols placed on a visible layer, in catalog order.
+
+    A hidden layer stays off the key. One placement is enough, including a run.
+    Notes, arrows, dashed lines, legends, and white boxes are not symbols.
+    """
+    used = set()
+    for item in placements:
+        kind = item.get("kind") or "symbol"
+        if kind not in ("symbol", "run"):
+            continue
+        sid = item.get("symbolId")
+        if not sid or sid not in symbols_by_id:
+            continue
+        if (item.get("layer") or "Power") in hidden:
+            continue
+        used.add(sid)
+    return [sym for sym in symbols_by_id.values() if sym["id"] in used]
 
 
 def export_pdf(
@@ -779,7 +782,7 @@ def export_pdf(
                 if legend_doc is None:
                     from elecplan.legend import build_legend_block
 
-                    raw, nat_w, nat_h = build_legend_block(_legend_symbols(symbols_by_id, hidden, ocg))
+                    raw, nat_w, nat_h = build_legend_block(_legend_symbols(symbols_by_id, placements, hidden))
                     legend_doc = pymupdf.open(stream=raw, filetype="pdf")
                     legend_size = (nat_w, nat_h)
                 assert legend_size is not None
