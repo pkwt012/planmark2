@@ -22,7 +22,7 @@ import pymupdf
 
 from elecplan.counts import build_counts_pdf
 from elecplan.export import crossing_hops, export_pdf, parse_placements
-from elecplan.legend import build_legend_block, build_legend_pdf, legend_layout
+from elecplan.legend import build_legend_block, build_legend_pdf, choose_legend_symbols, legend_layout
 from elecplan.library import load_symbols, prepare_svg
 from elecplan.sample_plan import build_sample_pdf
 from elecplan.server import App, Session, make_server, prune_recovery, recovery_dir, request_allowed
@@ -160,11 +160,83 @@ def main():
     check("floor heat is a labeled box", ">FH<" in floorheat["svg"] and "<rect" in floorheat["svg"])
     generator = next(item for item in lib["symbols"] if item["id"] == "generator")
     check("generator is a labeled box", ">GEN<" in generator["svg"] and "<rect" in generator["svg"] and generator["place"] == "point")
+    fresh = {
+        "steplight": ("lighting", True),
+        "artlight": ("lighting", True),
+        "chandelier": ("lighting", False),
+        "shoplight": ("lighting", False),
+        "vanitybar": ("lighting", True),
+        "recessed4": ("lighting", False),
+        "recessed6": ("lighting", False),
+        "occ": ("switches", True),
+        "motion": ("switches", True),
+        "fanspeed": ("switches", True),
+        "fanlight": ("switches", True),
+        "photocell": ("switches", True),
+        "humidity": ("switches", True),
+        "wifi": ("switches", True),
+        "duplex20": ("receptacles", True),
+        "gfci20": ("receptacles", True),
+        "halfhot": ("receptacles", True),
+        "clock": ("receptacles", True),
+        "popup": ("receptacles", False),
+        "inlet30": ("receptacles", True),
+        "inlet50": ("receptacles", True),
+        "hood": ("receptacles", True),
+        "disposal": ("receptacles", False),
+        "waterheater": ("receptacles", False),
+        "furnace": ("receptacles", False),
+        "camera": ("lowvoltage", False),
+        "mediapanel": ("lowvoltage", True),
+        "wap": ("lowvoltage", False),
+        "subpanel": ("equipment", True),
+        "xfer": ("equipment", True),
+        "sump": ("equipment", False),
+        "wellpump": ("equipment", False),
+        "septic": ("equipment", False),
+        "evse": ("equipment", True),
+        "mts": ("equipment", True),
+        "ats": ("equipment", True),
+        "loadcenter": ("equipment", True),
+        "jbox": ("equipment", True),
+        "gate": ("equipment", False),
+    }
+    by = {item["id"]: item for item in lib["symbols"]}
+    check("added plan symbols", set(fresh) <= ids, sorted(set(fresh) - ids))
+    misplaced = [
+        sid
+        for sid, (category, wall) in fresh.items()
+        if by[sid]["category"] != category or by[sid]["wall"] is not wall or by[sid]["place"] != "point"
+    ]
+    check("added symbols keep their group", not misplaced, str(misplaced))
+    check("occupancy switch is OCC", ">OCC<" in by["occ"]["svg"] and "<circle" not in by["occ"]["svg"])
+    check("20A duplex is labeled", ">20A<" in by["duplex20"]["svg"] and "<circle" in by["duplex20"]["svg"])
+    check("20A gfi is its own outlet", ">20A GFI<" in by["gfci20"]["svg"] and by["gfci20"]["svg"] != gfci["svg"])
+    check("cans keep their sizes", '>4"<' in by["recessed4"]["svg"] and '>6"<' in by["recessed6"]["svg"])
+    check("camera is low voltage", by["camera"]["defaultColor"] == "#1d4e89" and "<rect" in by["camera"]["svg"])
+    check(
+        "inlet is not the 30A outlet",
+        ">IN 30A<" in by["inlet30"]["svg"]
+        and ">30A 240V<" not in by["inlet30"]["svg"]
+        and by["inlet30"]["svg"] != next(item["svg"] for item in lib["symbols"] if item["id"] == "outlet30"),
+    )
+    check("hardwired charger is its own mark", ">EVSE<" in by["evse"]["svg"] and by["evse"]["svg"] != ev["svg"])
+    check("load center is its own mark", ">LC<" in by["loadcenter"]["svg"] and ">PANEL<" not in by["loadcenter"]["svg"])
+    check("well pump is marked WELL", ">WELL<" in by["wellpump"]["svg"] and ">WP<" not in by["wellpump"]["svg"])
+    for sid in ("camera", "mediapanel", "wap"):
+        check(f"{sid} ink can recolor", by[sid]["defaultColor"] == "#1d4e89" and "#141414" in by[sid]["svg"])
     layout = legend_layout(lib["symbols"])
     check(
-        "drop legend lists every symbol",
+        "legend layout keeps every symbol it is given",
         {entry["id"] for entry in layout["items"]} == ids and layout["width"] > 200,
     )
+    chosen = choose_legend_symbols(lib["symbols"], ["pendant", "nope", "duplex"])
+    check("legend keeps catalog order", [item["id"] for item in chosen] == ["duplex", "pendant"])
+    try:
+        choose_legend_symbols(lib["symbols"], [])
+        check("empty legend is refused", False)
+    except ValueError as exc:
+        check("empty legend is refused", "no symbols" in str(exc).lower(), str(exc))
     for item in lib["symbols"]:
         check(f"svg {item['id']}", "viewBox" in item["svg"] and 'class="rot"' in item["svg"])
 
@@ -492,16 +564,21 @@ def main():
     )
     guided_doc.close()
 
-    leg_parsed = parse_placements(
-        [{"kind": "legend", "page": 0, "x": 12, "y": 12, "width": min(300, layout["width"])}],
-        1,
-        ids,
-    )
     leg_page = pymupdf.open()
     leg_page.new_page(width=720, height=560)
     leg_bytes = leg_page.tobytes()
     leg_page.close()
-    leg_pdf = export_pdf(leg_bytes, leg_parsed, by_id)
+    leg_pdf = export_pdf(
+        leg_bytes,
+        [
+            {"symbolId": "floor", "page": 0, "x": 40, "y": 400, "size": 28, "rotation": 0, "color": "#141414", "layer": "Power"},
+            {"symbolId": "exhaust", "page": 0, "x": 90, "y": 400, "size": 28, "rotation": 0, "color": "#141414", "layer": "Lighting"},
+            {"symbolId": "pendant", "page": 0, "x": 140, "y": 400, "size": 28, "rotation": 0, "color": "#141414", "layer": "Lighting"},
+            {"kind": "run", "symbolId": "ledtape", "page": 0, "x1": 40, "y1": 460, "x2": 180, "y2": 460, "color": "#141414", "layer": "Lighting"},
+            {"kind": "legend", "page": 0, "x": 12, "y": 12, "width": min(300, layout["width"])},
+        ],
+        by_id,
+    )
     leg_view = pymupdf.open(stream=leg_pdf, filetype="pdf")
     leg_text = leg_view[0].get_text()
     check("dropped legend title", "SYMBOL LEGEND" in leg_text)
@@ -509,6 +586,8 @@ def main():
     check("dropped legend omits the letter mark", "Under cabinet lights" not in leg_text)
     check("dropped legend names the bath fan", "Bath exhaust fan" in leg_text)
     check("dropped legend names the pendant", "Pendant" in leg_text)
+    check("dropped legend names a run", "LED tape light" in leg_text)
+    check("dropped legend leaves unused symbols off", "Chandelier" not in leg_text and "Duplex outlet" not in leg_text)
     leg_view[0].get_pixmap(dpi=110, alpha=False).save("/tmp/planmarks-tools.png")
     leg_view.close()
 
@@ -529,6 +608,9 @@ def main():
                         chars.append((char["c"], point.x, point.y))
         return chars
 
+    leg_parsed = [
+        {"kind": "legend", "page": 0, "x": 12, "y": 12, "width": min(300, layout["width"])},
+    ]
     for page_rot in (90, 180, 270):
         turned = pymupdf.open()
         turned.new_page(width=720, height=560)
@@ -922,9 +1004,17 @@ def main():
     check("rotated white box misses the far corner", dark_pixels(spun_cover_pix, 0, 0, 8, 8) == 0)
     spun_cover_doc.close()
 
+    hidden_page = pymupdf.open()
+    hidden_page.new_page(width=640, height=400)
+    hidden_bytes = hidden_page.tobytes()
+    hidden_page.close()
     hidden_legend = export_pdf(
-        plain_bytes,
-        [{"kind": "legend", "page": 0, "x": 12, "y": 12, "width": 280}],
+        hidden_bytes,
+        [
+            {"symbolId": "duplex", "page": 0, "x": 40, "y": 280, "size": 28, "rotation": 0, "color": "#141414", "layer": "Power"},
+            {"symbolId": "pendant", "page": 0, "x": 100, "y": 280, "size": 28, "rotation": 0, "color": "#141414", "layer": "Lighting"},
+            {"kind": "legend", "page": 0, "x": 12, "y": 12, "width": 360},
+        ],
         by_id,
         hidden_layers=["Lighting"],
     )
@@ -1174,6 +1264,10 @@ def main():
         "help notes saved sheets, 90 days, and layered white boxes",
         b"90 days" in body and b"bring them back" in body and b"shows the plan again" in body,
     )
+    check(
+        "help notes the added symbols",
+        b"4 in and 6 in cans" in body and b"hardwired EV charger" in body,
+    )
     scripts = re.findall(rb'<script src="(/static/[a-z]+\.js)"></script>', home)
     check("page loads every script", len(scripts) == 6 and scripts[-1] == b"/static/app.js", str(scripts))
     status, body = 200, b""
@@ -1261,13 +1355,55 @@ def main():
     check("export page count", exported.page_count == 3)
     check("export keeps room name", "LIVING" in exported[0].get_text() or "KITCHEN" in exported[0].get_text())
     check("export stamps a tape run", "TAPE" in exported[0].get_text())
-    check("export stamps a dropped legend", "SYMBOL LEGEND" in exported[1].get_text())
-    status, _headers, body = request(base, "/api/legend", method="POST")
+    dropped_text = exported[1].get_text()
+    check("export stamps a dropped legend", "SYMBOL LEGEND" in dropped_text)
+    check(
+        "dropped legend lists symbols on the plan",
+        "Duplex outlet" in dropped_text and "LED tape light" in dropped_text and "Panel" in dropped_text,
+        dropped_text[:400],
+    )
+    check(
+        "dropped legend leaves off symbols that were not placed",
+        "Floor plug" not in dropped_text and "Chandelier" not in dropped_text,
+    )
+    status, _headers, body = request(
+        base,
+        "/api/legend",
+        data=b"{}",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    check("legend with no symbols is refused", status == 400 and b"no symbols" in body.lower(), body[:160])
+    status, _headers, body = request(
+        base,
+        "/api/legend",
+        data=json.dumps({"symbolIds": ["exhaust", "nope", "duplex"]}).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
     legend_info = json.loads(body)
     check(
         "legend sheet",
         status == 200 and legend_info.get("added", 0) >= 1 and legend_info["pageCount"] == 3 + legend_info["added"],
         body[:200],
+    )
+    status, _headers, legend_pdf_bytes = request(
+        base,
+        "/api/export",
+        data=b'{"placements":[]}',
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    legend_sheet = pymupdf.open(stream=legend_pdf_bytes, filetype="pdf")
+    legend_sheet_text = "\n".join(page.get_text() for page in legend_sheet)
+    legend_sheet.close()
+    check(
+        "legend sheet lists the symbols it was given",
+        "Duplex outlet" in legend_sheet_text and "Bath exhaust fan" in legend_sheet_text,
+    )
+    check(
+        "legend sheet leaves unused symbols off",
+        "Floor plug" not in legend_sheet_text and "Chandelier" not in legend_sheet_text,
     )
 
     empty_counts = json.dumps({"scope": "all", "page": 0, "rows": []}).encode()
