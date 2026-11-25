@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g class="rot" fill="none" stroke="#141414" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="50" cy="32" r="20" fill="#ffffff"/>
+    <line x1="36" y1="26" x2="64" y2="26" stroke-linecap="butt"/>
+    <line x1="36" y1="38" x2="64" y2="38" stroke-linecap="butt"/>
+    <path d="M46 56 L46 70 Q46 80 60 80"/>
+  </g>
+  <text class="label" x="50" y="96" text-anchor="middle" font-family="Helvetica" font-size="13" font-weight="700" fill="#141414">CLK</text>
+</svg>

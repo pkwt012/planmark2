@@ -117,6 +117,105 @@
       "hint": "Roof over an outlet. This plug sits up under the eave. Rotate the bars along the eave."
     },
     {
+      "id": "duplex20",
+      "name": "20A duplex",
+      "category": "receptacles",
+      "file": "duplex20.svg",
+      "wall": true,
+      "keywords": "20 amp 20a duplex receptacle outlet",
+      "hint": "Outlet marked 20A. Rotate it so the bars follow the wall."
+    },
+    {
+      "id": "gfci20",
+      "name": "20A GFCI",
+      "category": "receptacles",
+      "file": "gfci20.svg",
+      "wall": true,
+      "keywords": "20 amp 20a gfci gfi receptacle protected",
+      "hint": "Outlet marked 20A GFI. Rotate it so the bars follow the wall."
+    },
+    {
+      "id": "halfhot",
+      "name": "Half-hot outlet",
+      "category": "receptacles",
+      "file": "halfhot.svg",
+      "wall": true,
+      "keywords": "half-hot switched duplex split outlet",
+      "hint": "One bar is only half length. Rotate the bars along the wall."
+    },
+    {
+      "id": "clock",
+      "name": "Clock outlet",
+      "category": "receptacles",
+      "file": "clock.svg",
+      "wall": true,
+      "keywords": "clock hanger clock-hanger outlet clk",
+      "hint": "Outlet with a hanger hook, marked CLK. Rotate the bars along the wall."
+    },
+    {
+      "id": "popup",
+      "name": "Pop-up outlet",
+      "category": "receptacles",
+      "file": "popup.svg",
+      "wall": false,
+      "keywords": "countertop pop-up popup pop up outlet",
+      "hint": "Countertop pop-up, marked POP. It sits in the counter."
+    },
+    {
+      "id": "inlet30",
+      "name": "30A inlet",
+      "category": "receptacles",
+      "file": "inlet30.svg",
+      "wall": true,
+      "keywords": "generator inlet 30 amp 30a",
+      "hint": "Generator inlet marked IN 30A. Arrow points in. Rotate the bars along the wall."
+    },
+    {
+      "id": "inlet50",
+      "name": "50A inlet",
+      "category": "receptacles",
+      "file": "inlet50.svg",
+      "wall": true,
+      "keywords": "generator inlet 50 amp 50a",
+      "hint": "Generator inlet marked IN 50A. Arrow points in. Rotate the bars along the wall."
+    },
+    {
+      "id": "hood",
+      "name": "Range hood",
+      "category": "receptacles",
+      "file": "hood.svg",
+      "wall": true,
+      "keywords": "range hood vent kitchen",
+      "hint": "Box marked HOOD. Rotate the box to follow the wall."
+    },
+    {
+      "id": "disposal",
+      "name": "Disposal",
+      "category": "receptacles",
+      "file": "disposal.svg",
+      "wall": false,
+      "keywords": "garbage disposal disp",
+      "hint": "Box marked DISP. Place it where the disposal sits."
+    },
+    {
+      "id": "waterheater",
+      "name": "Water heater",
+      "category": "receptacles",
+      "file": "waterheater.svg",
+      "wall": false,
+      "keywords": "water heater wh",
+      "hint": "Box marked WH. Place it where the water heater sits."
+    },
+    {
+      "id": "furnace",
+      "name": "Furnace",
+      "category": "receptacles",
+      "file": "furnace.svg",
+      "wall": false,
+      "keywords": "furnace air handler ahu hvac",
+      "hint": "Box marked AHU. Place it where the furnace or air handler sits."
+    },
+    {
       "id": "switch",
       "name": "Single-pole switch",
       "category": "switches",
@@ -160,6 +259,69 @@
       "wall": true,
       "keywords": "timer switch st time clock",
       "hint": "Switch marked ST. Rotate it to follow the wall."
+    },
+    {
+      "id": "occ",
+      "name": "Occupancy switch",
+      "category": "switches",
+      "file": "occ.svg",
+      "wall": true,
+      "keywords": "occupancy sensor switch occ",
+      "hint": "Switch marked OCC. Rotate it to follow the wall."
+    },
+    {
+      "id": "motion",
+      "name": "Motion switch",
+      "category": "switches",
+      "file": "motion.svg",
+      "wall": true,
+      "keywords": "motion sensor switch ms",
+      "hint": "Switch marked MS. Rotate it to follow the wall."
+    },
+    {
+      "id": "fanspeed",
+      "name": "Fan speed",
+      "category": "switches",
+      "file": "fanspeed.svg",
+      "wall": true,
+      "keywords": "fan speed control switch fs",
+      "hint": "Fan speed control, marked FS. Rotate it to follow the wall."
+    },
+    {
+      "id": "fanlight",
+      "name": "Fan + light",
+      "category": "switches",
+      "file": "fanlight.svg",
+      "wall": true,
+      "keywords": "fan light combo control switch fl",
+      "hint": "Fan and light control, marked FL. Rotate it to follow the wall."
+    },
+    {
+      "id": "photocell",
+      "name": "Photocell",
+      "category": "switches",
+      "file": "photocell.svg",
+      "wall": true,
+      "keywords": "photocell switch pc dusk dawn",
+      "hint": "Photocell switch, marked PC. Rotate it to follow the wall."
+    },
+    {
+      "id": "humidity",
+      "name": "Humidity switch",
+      "category": "switches",
+      "file": "humidity.svg",
+      "wall": true,
+      "keywords": "humidity sensor switch bath fan hum",
+      "hint": "Bath fan humidity sensor, marked HUM. Rotate it to follow the wall."
+    },
+    {
+      "id": "wifi",
+      "name": "Wi-Fi switch",
+      "category": "switches",
+      "file": "wifi.svg",
+      "wall": true,
+      "keywords": "smart wifi wi-fi switch",
+      "hint": "Smart Wi-Fi switch. Rotate it to follow the wall."
     },
     {
       "id": "ceiling",
@@ -247,6 +409,69 @@
       "hint": "Bath exhaust fan, marked EF. This is not the ceiling fan."
     },
     {
+      "id": "steplight",
+      "name": "Step light",
+      "category": "lighting",
+      "file": "steplight.svg",
+      "wall": true,
+      "keywords": "step light stair",
+      "hint": "A low slot with light ticks. Rotate it so the slot follows the wall."
+    },
+    {
+      "id": "artlight",
+      "name": "Art light",
+      "category": "lighting",
+      "file": "artlight.svg",
+      "wall": true,
+      "keywords": "art light picture frame",
+      "hint": "A frame with a light bar above it. Rotate it to follow the wall."
+    },
+    {
+      "id": "chandelier",
+      "name": "Chandelier",
+      "category": "lighting",
+      "file": "chandelier.svg",
+      "wall": false,
+      "keywords": "chandelier hanging light fixture",
+      "hint": "Three hanging lights. Place it on the ceiling, in the room."
+    },
+    {
+      "id": "shoplight",
+      "name": "Shop light",
+      "category": "lighting",
+      "file": "shoplight.svg",
+      "wall": false,
+      "keywords": "shop garage industrial light",
+      "hint": "Long shop or garage light. Place it on the ceiling."
+    },
+    {
+      "id": "vanitybar",
+      "name": "Vanity bar",
+      "category": "lighting",
+      "file": "vanitybar.svg",
+      "wall": true,
+      "keywords": "vanity light bar bath",
+      "hint": "A bar with three bulbs. Rotate it so the bar follows the wall."
+    },
+    {
+      "id": "recessed4",
+      "name": "Recessed 4\"",
+      "category": "lighting",
+      "file": "recessed4.svg",
+      "wall": false,
+      "keywords": "recessed 4 inch can downlight",
+      "hint": "A 4 inch can. Circle and dot. Place it on the ceiling, in the room."
+    },
+    {
+      "id": "recessed6",
+      "name": "Recessed 6\"",
+      "category": "lighting",
+      "file": "recessed6.svg",
+      "wall": false,
+      "keywords": "recessed 6 inch can downlight",
+      "hint": "A 6 inch can. Circle and dot. Place it on the ceiling, in the room."
+    },
+    {
       "id": "smoke",
       "name": "Smoke detector",
       "category": "safety",
@@ -315,6 +540,36 @@
       "defaultColor": "#1d4e89",
       "keywords": "data cat6 jack low voltage ethernet phone",
       "hint": "The letter D. Rotate it to follow the wall."
+    },
+    {
+      "id": "camera",
+      "name": "Camera",
+      "category": "lowvoltage",
+      "file": "camera.svg",
+      "wall": false,
+      "defaultColor": "#1d4e89",
+      "keywords": "security camera cctv",
+      "hint": "Security camera. Rotate it so the lens points the way it looks."
+    },
+    {
+      "id": "mediapanel",
+      "name": "Media panel",
+      "category": "lowvoltage",
+      "file": "mediapanel.svg",
+      "wall": true,
+      "defaultColor": "#1d4e89",
+      "keywords": "structured media panel enclosure low voltage",
+      "hint": "Box marked MEDIA. A structured media panel. Rotate it along the wall."
+    },
+    {
+      "id": "wap",
+      "name": "Access point",
+      "category": "lowvoltage",
+      "file": "wap.svg",
+      "wall": false,
+      "defaultColor": "#1d4e89",
+      "keywords": "wireless access point wap wifi",
+      "hint": "Wireless access point. Place it on the ceiling or high on a wall."
     },
     {
       "id": "chime",
@@ -387,6 +642,105 @@
       "wall": true,
       "keywords": "bell chime button doorbell",
       "hint": "Bell button. Rotate it to follow the wall."
+    },
+    {
+      "id": "subpanel",
+      "name": "Subpanel",
+      "category": "equipment",
+      "file": "subpanel.svg",
+      "wall": true,
+      "keywords": "subpanel sub panel feeder",
+      "hint": "Box marked SUB. Rotate the box to follow the wall."
+    },
+    {
+      "id": "xfer",
+      "name": "Transfer switch",
+      "category": "equipment",
+      "file": "xfer.svg",
+      "wall": true,
+      "keywords": "transfer switch ts",
+      "hint": "Box marked TS. Rotate the box to follow the wall."
+    },
+    {
+      "id": "sump",
+      "name": "Sump pump",
+      "category": "equipment",
+      "file": "sump.svg",
+      "wall": false,
+      "keywords": "sump pump",
+      "hint": "Box marked SUMP. Place it where the sump pump sits."
+    },
+    {
+      "id": "wellpump",
+      "name": "Well pump",
+      "category": "equipment",
+      "file": "wellpump.svg",
+      "wall": false,
+      "keywords": "well pump",
+      "hint": "Box marked WELL. Place it where the well pump sits."
+    },
+    {
+      "id": "septic",
+      "name": "Septic pump",
+      "category": "equipment",
+      "file": "septic.svg",
+      "wall": false,
+      "keywords": "septic pump",
+      "hint": "Box marked SEPTIC. Place it where the septic pump sits."
+    },
+    {
+      "id": "evse",
+      "name": "EV charger",
+      "category": "equipment",
+      "file": "evse.svg",
+      "wall": true,
+      "keywords": "ev charger hardwired evse electric vehicle",
+      "hint": "Box marked EVSE. Hardwired charger. Rotate it along the wall."
+    },
+    {
+      "id": "mts",
+      "name": "Manual transfer",
+      "category": "equipment",
+      "file": "mts.svg",
+      "wall": true,
+      "keywords": "generator transfer switch manual mts",
+      "hint": "Box marked MTS. Manual generator transfer. Rotate it along the wall."
+    },
+    {
+      "id": "ats",
+      "name": "Auto transfer",
+      "category": "equipment",
+      "file": "ats.svg",
+      "wall": true,
+      "keywords": "generator transfer switch automatic ats",
+      "hint": "Box marked ATS. Automatic generator transfer. Rotate it along the wall."
+    },
+    {
+      "id": "loadcenter",
+      "name": "Load center",
+      "category": "equipment",
+      "file": "loadcenter.svg",
+      "wall": true,
+      "keywords": "load center lc panelboard",
+      "hint": "Box marked LC. Rotate the box to follow the wall."
+    },
+    {
+      "id": "jbox",
+      "name": "Junction box",
+      "category": "equipment",
+      "file": "jbox.svg",
+      "wall": true,
+      "keywords": "junction box jbox jb",
+      "hint": "Box marked JB. Rotate the box to follow the wall."
+    },
+    {
+      "id": "gate",
+      "name": "Gate operator",
+      "category": "equipment",
+      "file": "gate.svg",
+      "wall": false,
+      "keywords": "gate operator",
+      "hint": "Box marked GATE. Place it where the gate operator sits."
     }
   ]
 }
