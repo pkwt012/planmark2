@@ -143,12 +143,17 @@ async function openFile(file, { append = false } = {}) {
 
 async function addLegend() {
   if (!state.doc) return;
+  const symbols = usedLegendSymbols();
+  if (!symbols.length) {
+    toast("Place a symbol before adding a legend.");
+    return;
+  }
   setBusy(true, "Adding legend…");
   try {
     const res = await fetch("/api/legend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hiddenLayers: [...state.hiddenLayers] }),
+      body: JSON.stringify({ symbolIds: symbols.map((sym) => sym.id) }),
     });
     if (!res.ok) throw new Error(await readError(res));
     const info = await res.json();

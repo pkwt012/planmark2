@@ -37,7 +37,7 @@
       </div>
       <button type="button" id="openBtn" class="primary">Open PDF</button>
       <button type="button" id="addBtn" title="Append every sheet from another PDF" disabled>Add sheets</button>
-      <button type="button" id="legendBtn" title="Append a sheet that lists every symbol and its description" disabled>Legend</button>
+      <button type="button" id="legendBtn" title="Add a sheet that lists the symbols placed on the plan" disabled>Legend</button>
       <button type="button" id="circuitsBtn" title="Show circuit numbers next to symbols" aria-pressed="false">Circuits</button>
       <button type="button" id="reviseBtn" disabled title="Save a PDF you can open again and keep editing. It also looks marked in other viewers.">Export to revise</button>
       <button type="button" id="exportBtn" class="primary" disabled title="Draw the marks into a PDF to send out. Opening that file does not bring the marks back for editing.">Export final</button>
@@ -68,7 +68,7 @@
           </div>
           <div class="tool-row">
             <button type="button" id="whiteboxBtn" title="Cover part of the plan with an opaque white rectangle. Export final erases what is under it. Export all layers keeps the box in its layer. Click two opposite corners. Shift makes a square." disabled>White box</button>
-            <button type="button" id="dropLegendBtn" title="Drop a legend of every symbol on this sheet" disabled>Drop legend</button>
+            <button type="button" id="dropLegendBtn" title="Drop a key of the symbols placed on the plan" disabled>Drop legend</button>
           </div>
         </div>
         <div class="field">
@@ -178,7 +178,7 @@
       <div id="empty">
         <div class="card">
           <h1>Mark a floor plan</h1>
-          <p>Open a PDF, click a symbol, then click the sheet. Drag to move, spin the handle to rotate, and export a new PDF with the symbols drawn on the plan. Add a note off to the side and an arrow that points at the work. Dashed line connects lights. White box covers part of the sheet. Drop legend puts a symbol key on the sheet.</p>
+          <p>Open a PDF, click a symbol, then click the sheet. Drag to move, spin the handle to rotate, and export a new PDF with the symbols drawn on the plan. Add a note off to the side and an arrow that points at the work. Dashed line connects lights. White box covers part of the sheet. Drop legend puts a key of the symbols on the plan onto the sheet.</p>
           <div class="row center">
             <button type="button" id="emptyOpen" class="primary">Open PDF</button>
             <button type="button" id="sampleBtn">Try the sample plan</button>
@@ -238,10 +238,11 @@
       <li>Layers are Power, Lighting, Low-volt, Circuitry, or a name you type. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new symbols, dashed lines, and other marks go on that layer. Export all layers writes each layer as a group in the PDF. A white box in that export stays with its layer.</li>
       <li>Circuit is an optional label. Circuits in the header shows it next to the symbol. Add schedule sheet lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to when it does not already have one.</li>
       <li>Under cabinet 120V and LED tape light are runs. Click one end, then the other. The words sit under the line. Esc cancels that run.</li>
+      <li>The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.</li>
       <li>Apply size to all copies the selected symbol’s size onto the other marks of that type. This sheet only is the usual choice. All sheets covers the whole plan.</li>
       <li>Counts lists each symbol that is on the plan. Add counts sheet puts that list on a new page.</li>
-      <li>Drop legend places a key of every symbol on this sheet. Drag it where the crew can read it.</li>
-      <li>Legend in the header adds a sheet with every symbol, its name, and a short description.</li>
+      <li>Drop legend places a key of the symbols placed on the plan. Drag it where the crew can read it. The key follows those symbols as you add or delete them. A hidden layer stays off it.</li>
+      <li>Legend in the header adds a sheet of those same symbols, with the name and a short description. The sheet stays as it was when you added it.</li>
       <li>Calibrate on a known dimension (the sample has a 10 ft line) so size can be read in feet.</li>
       <li>Export to revise writes a marked PDF you can open again and keep editing. Export final draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing. A recovery copy is written just before either export.</li>
       <li>Marks are saved in this browser, and about every 75 seconds as a JSON file in the planmarks-recovery folder next to the program (or the project folder when you run from source). Closing the tab writes that file too. Opening the same plan offers to restore a newer recovery. Load can open that JSON as well. Sheets you add are kept in that folder too, and opening the original PDF asks whether to bring them back. Files in that folder that sit unused for 90 days are removed when the program starts.</li>

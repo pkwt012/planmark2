@@ -33,7 +33,7 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 
 ## Use
 
-- **Open PDF** loads one file. **Add sheets** appends every page from another PDF. **Legend** adds a sheet that lists every symbol with its name and description.
+- **Open PDF** loads one file. **Add sheets** appends every page from another PDF. **Legend** adds a sheet that lists the symbols placed on the plan, with the name and a short description.
 - **Note** puts a short label on the sheet. Click where it should sit, then type. Drag it off to the side. The size slider changes the type size. A note is text, so it is left out of the symbol legend and the counts.
 - **Arrow** points at the work, the same way a dashed line is drawn. Click the tail, then click where the arrow points. The head is on the second point. Esc cancels that arrow, then puts the tool away. Drag the shaft to move it, or drag an amber end to change it.
 - **Dashed line** draws a switch leg between lights. Click the first point, then the next. It stays armed so you can draw another. An end snapped onto a symbol stays attached when that symbol moves. A blue end is attached. Drag that end off the symbol, or drag the line itself, to disconnect it. Deleting the symbol also releases the line. Esc cancels the segment, then puts the tool away. Where a dashed line or a run crosses another, the one drawn later hops over it.
@@ -45,10 +45,11 @@ PyMuPDF is the only dependency. There is no account, no upload, and no network c
 - **Circuit** is an optional label on a symbol, dashed line, run, or note. **Circuits** in the header shows that label on the sheet. **Add schedule sheet** lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to, when it does not already have one.
 - **Floor plug**, **flood light**, **eave plug**, **patio heater**, and **floor heat** are in the symbol list.
 - **Generator** is a box marked GEN.
+- The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.
 - **Under cabinet 120V** and **LED tape light** are runs. Click one end, then the other. A solid line with end bars is drawn between the clicks, and 120V or TAPE sits under the line. The tool stays armed. Esc cancels the run, then puts it away.
 - **Apply size to all** copies the selected symbol’s size onto the other marks of that type. Choose this sheet or every sheet. Undo puts the old sizes back. Notes, arrows, dashed lines, legends, and runs are left alone.
 - **Counts** lists how many of each symbol are placed. Switch between this sheet and all sheets. **Add counts sheet** puts that list on a new page of the plan.
-- **Drop legend** places a key of every symbol on the current sheet. Drag it to a clear spot. The width slider scales it. The header **Legend** button still adds a full sheet with the longer descriptions.
+- **Drop legend** places a key of the symbols placed on the plan. Drag it to a clear spot. The width slider scales it. The key follows those symbols as you add or delete them. The header **Legend** button adds a sheet of those same symbols, with the longer descriptions. That sheet stays as it was when you added it. A symbol that is not on the plan is left off. A hidden layer stays off.
 - **Try the sample plan** is a two-sheet house drawn at 1/4" = 1'-0", with a 10 ft dimension for calibration.
 - Click a palette symbol to arm it, then click the plan. Click the symbol again, or press Esc, to stop placing.
 - Drag to move. Drag the amber handle to rotate the whole symbol (Shift snaps to 15°). Letters turn with the symbol. A symbol is clicked in its center, about 65% of the box. Click the same spot again to select the next symbol when those centers overlap.

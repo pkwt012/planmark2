@@ -9,6 +9,32 @@ import pymupdf
 from elecplan.export import export_pdf
 
 
+def choose_legend_symbols(symbols: list[dict], symbol_ids) -> list[dict]:
+    """Catalog entries for the symbols on the plan, in catalog order.
+
+    Unknown ids are skipped. An empty result is refused so a legend sheet
+    is not a blank page.
+    """
+    if symbol_ids is None:
+        symbol_ids = []
+    if not isinstance(symbol_ids, list):
+        raise ValueError("bad symbols")
+    if len(symbol_ids) > 500:
+        raise ValueError("too many symbols")
+    wanted = set()
+    for raw in symbol_ids:
+        if not isinstance(raw, str):
+            raise ValueError("bad symbols")
+        sid = raw.strip()
+        if not sid or len(sid) > 80 or any(ord(ch) < 32 for ch in sid):
+            raise ValueError("bad symbols")
+        wanted.add(sid)
+    chosen = [sym for sym in symbols if sym.get("id") in wanted]
+    if not chosen:
+        raise ValueError("There are no symbols on the plan to list")
+    return chosen
+
+
 def build_legend_pdf(symbols: list[dict], width: float, height: float) -> bytes:
     """One or more pages matching the plan sheet, listing the whole library."""
     width = float(width)
