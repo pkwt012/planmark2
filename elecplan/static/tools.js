@@ -7,7 +7,7 @@ function placeAt(cx, cy, shift) {
   if (!sym || !page) return;
   const pt = clientToPdf(cx, cy);
   if (pt.x < -40 || pt.y < -40 || pt.x > page.width + 40 || pt.y > page.height + 40) return;
-  const snapped = snapPlacement(pt, sym.id, false, shift);
+  const snapped = snapPlacement(pt, sym.id, false, shift, state.defaultSize);
   pushUndo();
   const mark = {
     id: uid(),
@@ -17,11 +17,16 @@ function placeAt(cx, cy, shift) {
     x: snapped.x,
     y: snapped.y,
     size: state.defaultSize,
-    rotation: 0,
+    rotation: Number.isFinite(snapped.rotation) ? snapped.rotation : 0,
     color: state.ink || sym.defaultColor || "#141414",
     layer: placeLayer("symbol", sym.id),
   };
+  if (takesHeight(sym.id)) {
+    const height = cleanHeight(state.outletHeight, true);
+    if (height) mark.height = height;
+  }
   state.placements.push(mark);
+  rememberSymbol(sym.id);
   state.selectedId = mark.id;
   renderMarks();
   syncInspector();
@@ -165,23 +170,48 @@ function snapToUnderlay(pt) {
       const dy = y - cy;
       const d2 = dx * dx + dy * dy;
       if (d2 > r2) continue;
-      const gradient = Math.hypot(lumAt(x + 1, y) - lumAt(x - 1, y), lumAt(x, y + 1) - lumAt(x, y - 1));
+      const gx = lumAt(x + 1, y) - lumAt(x - 1, y);
+      const gy = lumAt(x, y + 1) - lumAt(x, y - 1);
+      const gradient = Math.hypot(gx, gy);
       if (gradient < 55) continue;
       const score = Math.sqrt(d2) - Math.min(gradient, 180) / 1000;
       if (score < bestScore) {
         bestScore = score;
-        best = { x: x / sx, y: y / sy };
+        // Gradient points toward the lighter pixels, which is the open side of a wall.
+        const nx = gx / sx;
+        const ny = gy / sy;
+        const nlen = Math.hypot(nx, ny) || 1;
+        best = { x: x / sx, y: y / sy, nx: nx / nlen, ny: ny / nlen };
       }
     }
   }
   return best;
 }
 
-function snapPlacement(pt, symbolId, freePlace, shift) {
+function wallSidePoint(hit, gap) {
+  return { x: hit.x + hit.nx * gap, y: hit.y + hit.ny * gap };
+}
+
+function wallRotation(nx, ny, outlets) {
+  // The label side points into the room, so a switch stays upright on a horizontal wall.
+  // Outlet slots are drawn across the symbol. One more quarter turn stands them out from the wall.
+  const deg = (Math.atan2(-nx, ny) * 180) / Math.PI;
+  const turned = normRot(Math.round(deg / 15) * 15);
+  return outlets ? normRot(turned + 90) : turned;
+}
+
+function snapPlacement(pt, symbolId, freePlace, shift, size) {
   const guide = snapToGuide(pt, state.pageIndex);
   if (guide) return guide;
   if (!state.snap || shift || symbolSkipsSnap(symbolId, freePlace)) return pt;
-  return snapToUnderlay(pt) || pt;
+  const hit = snapToUnderlay(pt);
+  if (!hit) return pt;
+  if (!sitsBesideWall(symbolsById[symbolId])) return { x: hit.x, y: hit.y };
+  const box = Number(size) || state.defaultSize || 28;
+  const placed = wallSidePoint(hit, box * WALL_SIDE);
+  const sym = symbolsById[symbolId];
+  placed.rotation = wallRotation(hit.nx, hit.ny, !!(sym && sym.category === "receptacles"));
+  return placed;
 }
 
 function snapPoint(pt, excludeId) {
@@ -771,10 +801,12 @@ function moveWithGroup(drag, dx, dy, shift) {
   if (!primary || !origin) return;
   let x = origin.x + dx;
   let y = origin.y + dy;
+  let wallRotationDeg = null;
   if (isSymbol(primary)) {
-    const snapped = snapPlacement({ x, y }, primary.symbolId, primary.freePlace, shift);
+    const snapped = snapPlacement({ x, y }, primary.symbolId, primary.freePlace, shift, primary.size);
     x = snapped.x;
     y = snapped.y;
+    if (Number.isFinite(snapped.rotation)) wallRotationDeg = snapped.rotation;
   }
   const adx = x - origin.x;
   const ady = y - origin.y;
@@ -784,9 +816,9 @@ function moveWithGroup(drag, dx, dy, shift) {
     if (!mate || isSegment(mate) || isWhitebox(mate)) continue;
     mate.x = item.x + adx;
     mate.y = item.y + ady;
+    if (wallRotationDeg != null && sitsBesideWall(symbolsById[mate.symbolId])) mate.rotation = wallRotationDeg;
     if (followAnchors(mate)) wired = true;
-    const el = marksLayer.querySelector(`.mark[data-id="${CSS.escape(mate.id)}"]`);
-    if (el) positionMark(el, mate);
+    updateMark(mate);
   }
   if (wired) renderWires();
   paintGangBoxes();
@@ -1051,9 +1083,10 @@ function onPointerMove(e) {
       let x = drag.origin.x + dx;
       let y = drag.origin.y + dy;
       if (isSymbol(p)) {
-        const snapped = snapPlacement({ x, y }, p.symbolId, p.freePlace, e.shiftKey);
+        const snapped = snapPlacement({ x, y }, p.symbolId, p.freePlace, e.shiftKey, p.size);
         x = snapped.x;
         y = snapped.y;
+        if (Number.isFinite(snapped.rotation)) p.rotation = snapped.rotation;
       }
       p.x = x;
       p.y = y;

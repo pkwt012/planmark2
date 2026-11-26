@@ -49,6 +49,34 @@ def _optional_text(value, label: str, limit: int) -> str | None:
     return text
 
 
+_HEIGHT_CHARS = re.compile(r"^[0-9A-Za-z\"'./ -]+$")
+_HEIGHT_NUMBER = re.compile(r"^\d{1,3}(?:\.\d)?$")
+
+
+def clean_height(value) -> str | None:
+    """Outlet height. A plain number such as 48 is stored as 48\"."""
+    text = _optional_text(value, "height", 12)
+    if text is None:
+        return None
+    if not _HEIGHT_CHARS.fullmatch(text):
+        raise ValueError("bad height")
+    if _HEIGHT_NUMBER.fullmatch(text):
+        text += '"'
+    if len(text) > 12:
+        raise ValueError("bad height")
+    return text
+
+
+def _height_rank(height: str) -> tuple:
+    """Blank first, then by the leading number, so 18\" sits before 48\"."""
+    if not height:
+        return (0, 0.0, "")
+    match = re.match(r"(\d+(?:\.\d+)?)", height)
+    if match:
+        return (1, float(match.group(1)), height)
+    return (2, 0.0, height)
+
+
 def _mark_extra(item: dict) -> dict:
     extra = {}
     layer = _optional_text(item.get("layer"), "layer", 40)
@@ -222,19 +250,23 @@ def parse_placements(raw, page_count: int, symbol_ids: set[str], run_ids: set[st
         _finite(x, y, size, rotation)
         if not 2 <= size <= 500:
             raise ValueError(f"placement {index} size must be between 2 and 500 points")
-        out.append(
-            {
-                "kind": "symbol",
-                "symbolId": sid,
-                "page": page,
-                "x": x,
-                "y": y,
-                "size": size,
-                "rotation": rotation,
-                "color": color,
-                **extra,
-            }
-        )
+        parsed = {
+            "kind": "symbol",
+            "symbolId": sid,
+            "page": page,
+            "x": x,
+            "y": y,
+            "size": size,
+            "rotation": rotation,
+            "color": color,
+            **extra,
+        }
+        if item.get("height") not in (None, ""):
+            try:
+                parsed["height"] = clean_height(item.get("height"))
+            except ValueError as exc:
+                raise ValueError(f"placement {index}: {exc}") from exc
+        out.append(parsed)
     return out
 
 
@@ -618,6 +650,46 @@ def _erase_under_whiteboxes(doc: pymupdf.Document, boxes: list[dict]) -> None:
         )
 
 
+def _draw_height_tag(page, x: float, y: float, size: float, text: str, oc: int = 0) -> None:
+    """Height under an outlet. It stays upright when the outlet rotates."""
+    label = str(text or "").strip()
+    if not label:
+        return
+    font_size = max(7.0, min(12.0, float(size) * 0.34))
+    width = pymupdf.get_text_length(label, fontname="hebo", fontsize=font_size)
+    font = pymupdf.Font("hebo")
+    ascent = font.ascender * font_size
+    descent = -font.descender * font_size
+    left = x - width / 2 - 1.5
+    top = y + size / 2 + 1.5
+    box_w = width + 3.0
+    box_h = ascent + descent + 1.2
+    matrix = page.derotation_matrix
+
+    def pt(px: float, py: float) -> pymupdf.Point:
+        return pymupdf.Point(px, py) * matrix
+
+    page.draw_polyline(
+        [pt(left, top), pt(left + box_w, top), pt(left + box_w, top + box_h), pt(left, top + box_h)],
+        color=(1, 1, 1),
+        fill=(1, 1, 1),
+        width=0.3,
+        closePath=True,
+        overlay=True,
+        oc=oc,
+    )
+    page.insert_text(
+        pt(left + 1.5, top + ascent + 0.4),
+        label,
+        fontsize=font_size,
+        fontname="hebo",
+        color=(0.08, 0.08, 0.08),
+        rotate=int(page.rotation) % 360,
+        overlay=True,
+        oc=oc,
+    )
+
+
 def _draw_circuit_tag(page, x: float, y: float, text: str, oc: int = 0) -> None:
     """Tiny circuit id. x, y is the visual baseline."""
     label = str(text or "").strip()
@@ -658,9 +730,10 @@ def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str
     """Symbols placed on a visible layer, in catalog order.
 
     A hidden layer stays off the key. One placement is enough, including a run.
-    Notes, arrows, dashed lines, legends, and white boxes are not symbols.
+    An outlet height gets its own row. Notes, arrows, dashed lines, legends,
+    and white boxes are not symbols.
     """
-    used = set()
+    used: dict[str, set[str]] = {}
     for item in placements:
         kind = item.get("kind") or "symbol"
         if kind not in ("symbol", "run"):
@@ -670,8 +743,21 @@ def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str
             continue
         if (item.get("layer") or "Power") in hidden:
             continue
-        used.add(sid)
-    return [sym for sym in symbols_by_id.values() if sym["id"] in used]
+        height = ""
+        sym = symbols_by_id[sid]
+        if sym.get("category") == "receptacles" and item.get("height"):
+            height = str(item["height"])
+        used.setdefault(sid, set()).add(height)
+    entries = []
+    for sid, sym in symbols_by_id.items():
+        if sid not in used:
+            continue
+        for height in sorted(used[sid], key=_height_rank):
+            if height:
+                entries.append({**sym, "name": f"{sym['name']} {height}"})
+            else:
+                entries.append(sym)
+    return entries
 
 
 def export_pdf(
@@ -808,6 +894,9 @@ def export_pdf(
             # The spin itself was baked with the page rotation removed.
             rect = rect * page.derotation_matrix
             page.show_pdf_page(rect, src, 0, overlay=True, keep_proportion=True, oc=oc)
+            sym = symbols_by_id[item["symbolId"]]
+            if item.get("height") and sym.get("category") == "receptacles":
+                _draw_height_tag(page, x, y, size, item["height"], oc)
             if show_circuits and item.get("circuit"):
                 _draw_circuit_tag(page, x + size / 2 + 2, y - size / 2 + 7, item["circuit"], oc)
         if revise:

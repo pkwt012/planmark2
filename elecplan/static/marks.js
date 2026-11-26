@@ -65,6 +65,13 @@ function markElement(p) {
   hit.style.left = hitInset + "%";
   hit.style.top = hitInset + "%";
   el.appendChild(hit);
+  const height = takesHeight(p.symbolId) ? cleanHeight(p.height, true) : "";
+  if (height) {
+    const tag = document.createElement("div");
+    tag.className = "height-tag";
+    tag.textContent = height;
+    el.appendChild(tag);
+  }
   if (state.showCircuits && p.circuit) {
     const tag = document.createElement("div");
     tag.className = "circuit-tag";
@@ -157,6 +164,36 @@ function cleanCircuit(value) {
   return name;
 }
 
+function takesHeight(symbolId) {
+  const sym = symbolsById[symbolId];
+  return Boolean(sym && sym.category === "receptacles");
+}
+
+function cleanHeight(value, quoteNumbers) {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  let text = String(value).replace(/\s+/g, " ").trim();
+  if (!text || [...text].some((ch) => ch.charCodeAt(0) < 32)) return "";
+  if (text.length > 12) text = text.slice(0, 12).trim();
+  if (!/^[0-9A-Za-z"'./ -]+$/.test(text)) return "";
+  // A plain number is inches. Quoting waits until the field is left, so typing 48 is not cut off at 4.
+  if (quoteNumbers && /^\d{1,3}(\.\d)?$/.test(text)) text += '"';
+  if (text.length > 12) return "";
+  return text;
+}
+
+function heightRank(height) {
+  if (!height) return [0, 0, ""];
+  const match = /^(\d+(?:\.\d+)?)/.exec(height);
+  if (match) return [1, Number(match[1]), height];
+  return [2, 0, height];
+}
+
+function symbolLabel(p) {
+  const name = symbolName(p.symbolId);
+  const height = takesHeight(p.symbolId) ? cleanHeight(p.height, true) : "";
+  return height ? `${name} ${height}` : name;
+}
+
 function layerOf(p) {
   return (p && p.layer) || "Power";
 }
@@ -181,6 +218,12 @@ function symbolSkipsSnap(symbolId, freePlace) {
   if (sym.id === "floor") return true;
   if (sym.category === "lighting" && sym.wall === false) return true;
   return false;
+}
+
+function sitsBesideWall(sym) {
+  if (!sym) return false;
+  if (sym.category === "switches") return true;
+  return sym.category === "receptacles" && sym.wall === true;
 }
 
 function boxBounds(p) {
@@ -344,14 +387,28 @@ function layoutLegend(symbols) {
 }
 
 function usedLegendSymbols() {
-  const used = new Set();
+  const used = new Map();
   for (const item of state.placements) {
     if (!layerVisible(item)) continue;
     if (!(isSymbol(item) || item.kind === "run") || !item.symbolId) continue;
     if (!symbolsById[item.symbolId]) continue;
-    used.add(item.symbolId);
+    if (!used.has(item.symbolId)) used.set(item.symbolId, new Set());
+    const height = takesHeight(item.symbolId) ? cleanHeight(item.height, true) : "";
+    used.get(item.symbolId).add(height);
   }
-  return library.symbols.filter((sym) => used.has(sym.id));
+  const entries = [];
+  for (const sym of library.symbols) {
+    if (!used.has(sym.id)) continue;
+    const heights = [...used.get(sym.id)].sort((a, b) => {
+      const ka = heightRank(a);
+      const kb = heightRank(b);
+      return ka[0] - kb[0] || ka[1] - kb[1] || ka[2].localeCompare(kb[2]);
+    });
+    for (const height of heights) {
+      entries.push(height ? { ...sym, name: `${sym.name} ${height}` } : sym);
+    }
+  }
+  return entries;
 }
 
 function visibleLegendLayout() {
