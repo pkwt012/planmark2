@@ -418,7 +418,24 @@ function onKeyUp(e) {
   }
 }
 
+function showRibbon(name) {
+  for (const page of document.querySelectorAll(".ribbon-page")) {
+    page.hidden = page.dataset.tab !== name;
+  }
+  for (const tab of document.querySelectorAll(".ribbon-tab")) {
+    const on = tab.dataset.tab === name;
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+  }
+}
+
+function bindRibbon() {
+  for (const tab of document.querySelectorAll(".ribbon-tab")) {
+    tab.addEventListener("click", () => showRibbon(tab.dataset.tab));
+  }
+}
+
 function bind() {
+  bindRibbon();
   $("openBtn").addEventListener("click", () => $("filePdf").click());
   $("emptyOpen").addEventListener("click", () => $("filePdf").click());
   $("sampleBtn").addEventListener("click", () => openSample());
@@ -540,6 +557,34 @@ function bind() {
     renderMarks();
     scheduleSave();
   });
+  $("ampsInput").addEventListener("focus", () => {
+    ampsUndoArmed = true;
+  });
+  $("ampsInput").addEventListener("input", () => {
+    const p = selected();
+    if (!p || !takesAmps(p.symbolId)) return;
+    if (ampsUndoArmed) {
+      pushUndo();
+      ampsUndoArmed = false;
+    }
+    const next = cleanAmps($("ampsInput").value, false);
+    if (next) p.amps = next;
+    else delete p.amps;
+    state.equipmentAmps = next;
+    renderMarks();
+    scheduleSave();
+  });
+  $("ampsInput").addEventListener("blur", () => {
+    const p = selected();
+    if (!p || !takesAmps(p.symbolId)) return;
+    const next = cleanAmps($("ampsInput").value, true);
+    if (next) p.amps = next;
+    else delete p.amps;
+    state.equipmentAmps = next;
+    $("ampsInput").value = next;
+    renderMarks();
+    scheduleSave();
+  });
   $("freePlace").addEventListener("change", () => {
     const p = selected();
     if (!isSymbol(p)) return;
@@ -598,7 +643,9 @@ function bind() {
   }
   $("countsSheetBtn").addEventListener("click", () => addCountsSheet());
   $("scheduleBtn").addEventListener("click", () => addScheduleSheet());
-  $("countsPanel").addEventListener("toggle", () => saveLayout());
+  if ($("countsPanel").tagName === "DETAILS") {
+    $("countsPanel").addEventListener("toggle", () => saveLayout());
+  }
   $("sizeOneFoot").addEventListener("click", () => {
     if (!state.calibration) return;
     const raw = state.calibration.pointsPerFoot;
@@ -645,8 +692,8 @@ function bind() {
     pushUndo();
     p.symbolId = $("symbolSelect").value;
     if (!takesHeight(p.symbolId)) delete p.height;
+    if (!takesAmps(p.symbolId)) delete p.amps;
     if (!state.ink) p.color = (symbolsById[p.symbolId] && symbolsById[p.symbolId].defaultColor) || "#141414";
-    rememberSymbol(p.symbolId);
     if (!isSwitchSymbol(p)) {
       delete p.groupId;
       delete p.gang;
@@ -751,15 +798,14 @@ function loadLayout() {
   try {
     const data = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
     if (Array.isArray(data.open)) openCategories = new Set(data.open.filter((id) => typeof id === "string"));
-    if (typeof data.countsOpen === "boolean") $("countsPanel").open = data.countsOpen;
+    if ($("countsPanel").tagName === "DETAILS" && typeof data.countsOpen === "boolean") {
+      $("countsPanel").open = data.countsOpen;
+    }
     if (data.sideWidth) setLen("--side-width", data.sideWidth, 220, 560);
     if (data.toolsHeight) setLen("--tools-height", data.toolsHeight, 140, 720);
     if (data.toolsWidth) setLen("--tools-width", data.toolsWidth, 180, 480);
     if (typeof data.snap === "boolean") state.snap = data.snap;
     if (typeof data.exportAllLayers === "boolean") state.exportAllLayers = data.exportAllLayers;
-    if (Array.isArray(data.recent)) {
-      recentSymbols = data.recent.filter((id) => typeof id === "string").slice(0, 6);
-    }
   } catch (_err) {
     /* keep the built-in sizes */
   }
@@ -771,10 +817,9 @@ function saveLayout() {
     sideWidth: readLen("--side-width", 300),
     toolsHeight: readLen("--tools-height", 340),
     toolsWidth: readLen("--tools-width", 260),
-    countsOpen: $("countsPanel").open,
+    countsOpen: $("countsPanel").tagName === "DETAILS" ? $("countsPanel").open : true,
     snap: state.snap,
     exportAllLayers: state.exportAllLayers,
-    recent: recentSymbols,
   };
   try {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(data));
@@ -824,7 +869,8 @@ function dragSplitter(el, apply) {
 
 function bindSplitters() {
   const aside = document.querySelector("aside");
-  dragSplitter($("panelSplit"), {
+  const panelSplit = $("panelSplit");
+  if (panelSplit) dragSplitter(panelSplit, {
     axis: panelAxis,
     start() {
       return panelAxis() === "x"
@@ -849,7 +895,9 @@ function bindSplitters() {
       document.documentElement.style.removeProperty("--tools-width");
     },
   });
-  dragSplitter($("sideSplit"), {
+  const sideSplit = $("sideSplit");
+  if (!sideSplit) return;
+  dragSplitter(sideSplit, {
     axis: () => "x",
     start: () => ({ size: readLen("--side-width", 300) }),
     move(dx, _dy, start) {
@@ -875,7 +923,6 @@ async function init() {
   }
   library = await res.json();
   symbolsById = Object.fromEntries(library.symbols.map((sym) => [sym.id, sym]));
-  recentSymbols = recentSymbols.filter((id) => symbolsById[id]);
   buildSymbolSelect();
   buildColors();
   renderPalette();
