@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -100,7 +101,65 @@ def text_dirs(page, needle):
     return found
 
 
+def grab_function(src, name):
+    start = src.find(f"function {name}(")
+    if start < 0:
+        raise AssertionError(name)
+    brace = src.find("{", start)
+    depth = 0
+    for index in range(brace, len(src)):
+        if src[index] == "{":
+            depth += 1
+        elif src[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[start : index + 1]
+    raise AssertionError(name)
+
+
+def check_wall_side():
+    marks = (ROOT / "elecplan/static/marks.js").read_text()
+    tools = (ROOT / "elecplan/static/tools.js").read_text()
+    core = (ROOT / "elecplan/static/core.js").read_text()
+    script = (
+        grab_function(core, "normRot")
+        + "\n"
+        + grab_function(marks, "sitsBesideWall")
+        + "\n"
+        + grab_function(tools, "wallSidePoint")
+        + "\n"
+        + grab_function(tools, "wallRotation")
+        + """
+function near(a, b) { return Math.abs(a - b) < 0.001; }
+const below = wallSidePoint({x: 10, y: 20, nx: 0, ny: 1}, 12);
+if (!near(below.x, 10) || !near(below.y, 32)) process.exit(1);
+const above = wallSidePoint({x: 10, y: 20, nx: 0, ny: -1}, 12);
+if (!near(above.x, 10) || !near(above.y, 8)) process.exit(1);
+if (!sitsBesideWall({category: "switches", wall: true})) process.exit(2);
+if (!sitsBesideWall({category: "receptacles", wall: true})) process.exit(3);
+if (sitsBesideWall({category: "receptacles", wall: false})) process.exit(4);
+if (sitsBesideWall({category: "lighting", wall: true})) process.exit(5);
+if (sitsBesideWall({category: "lighting", wall: false})) process.exit(6);
+if (wallRotation(0, 1) !== 0) process.exit(7);
+if (wallRotation(1, 0) !== 270) process.exit(8);
+if (wallRotation(-1, 0) !== 90) process.exit(9);
+if (wallRotation(0, -1) !== 180) process.exit(10);
+if (wallRotation(0, 1, true) !== 90) process.exit(11);
+if (wallRotation(1, 0, true) !== 0) process.exit(12);
+if (wallRotation(-1, 0, true) !== 180) process.exit(13);
+if (wallRotation(0, -1, true) !== 270) process.exit(14);
+"""
+    )
+    run = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+    check(
+        "outlet snap sits beside the wall",
+        run.returncode == 0,
+        (run.stderr or run.stdout)[-300:],
+    )
+
+
 def main():
+    check_wall_side()
     print("library")
     lib = load_symbols()
     ids = {item["id"] for item in lib["symbols"]}
@@ -176,17 +235,16 @@ def main():
         "humidity": ("switches", True),
         "wifi": ("switches", True),
         "duplex20": ("receptacles", True),
-        "outlet48": ("receptacles", True),
         "gfci20": ("receptacles", True),
         "halfhot": ("receptacles", True),
         "clock": ("receptacles", True),
         "popup": ("receptacles", False),
         "inlet30": ("receptacles", True),
         "inlet50": ("receptacles", True),
-        "hood": ("receptacles", True),
-        "disposal": ("receptacles", False),
-        "waterheater": ("receptacles", False),
-        "furnace": ("receptacles", False),
+        "hood": ("equipment", True),
+        "disposal": ("equipment", False),
+        "waterheater": ("equipment", False),
+        "furnace": ("equipment", False),
         "camera": ("lowvoltage", False),
         "mediapanel": ("lowvoltage", True),
         "wap": ("lowvoltage", False),
@@ -212,7 +270,7 @@ def main():
     check("added symbols keep their group", not misplaced, str(misplaced))
     check("occupancy switch is OCC", ">OCC<" in by["occ"]["svg"] and "<circle" not in by["occ"]["svg"])
     check("20A duplex is labeled", ">20A<" in by["duplex20"]["svg"] and "<circle" in by["duplex20"]["svg"])
-    check("48 inch outlet is labeled", '>48"<' in by["outlet48"]["svg"] and "<circle" in by["outlet48"]["svg"])
+    check("48 inch outlet is not its own symbol", "outlet48" not in ids)
     check("20A gfi is its own outlet", ">20A GFI<" in by["gfci20"]["svg"] and by["gfci20"]["svg"] != gfci["svg"])
     check("cans keep their sizes", '>4"<' in by["recessed4"]["svg"] and '>6"<' in by["recessed6"]["svg"])
     check("camera is low voltage", by["camera"]["defaultColor"] == "#1d4e89" and "<rect" in by["camera"]["svg"])
@@ -234,6 +292,20 @@ def main():
     )
     chosen = choose_legend_symbols(lib["symbols"], ["pendant", "nope", "duplex"])
     check("legend keeps catalog order", [item["id"] for item in chosen] == ["duplex", "pendant"])
+    named = choose_legend_symbols(
+        lib["symbols"],
+        ["duplex", "duplex", "nope"],
+        ["Duplex outlet 48\"", "Duplex outlet", "Ignored"],
+    )
+    check(
+        "legend lists each outlet height",
+        [item["name"] for item in named] == ["Duplex outlet 48\"", "Duplex outlet"],
+    )
+    try:
+        choose_legend_symbols(lib["symbols"], ["switch"], ['Single-pole switch 48"'])
+        check("height stays off a switch legend", False)
+    except ValueError as exc:
+        check("height stays off a switch legend", "bad symbols" in str(exc), str(exc))
     try:
         choose_legend_symbols(lib["symbols"], [])
         check("empty legend is refused", False)
@@ -965,9 +1037,78 @@ def main():
     tagged_doc = pymupdf.open(stream=tagged, filetype="pdf")
     check("circuit label exports when circuits are shown", "A1" in tagged_doc[0].get_text())
     tagged_doc.close()
+    height_src = pymupdf.open()
+    height_src.new_page(width=320, height=240)
+    height_raw = height_src.tobytes()
+    height_src.close()
+    height_parsed = parse_placements(
+        [
+            {
+                "kind": "symbol",
+                "symbolId": "duplex",
+                "page": 0,
+                "x": 70,
+                "y": 50,
+                "size": 36,
+                "rotation": 90,
+                "color": "#141414",
+                "height": "48",
+            },
+            {
+                "kind": "symbol",
+                "symbolId": "duplex",
+                "page": 0,
+                "x": 140,
+                "y": 50,
+                "size": 36,
+                "rotation": 0,
+                "color": "#141414",
+            },
+            {
+                "kind": "symbol",
+                "symbolId": "switch",
+                "page": 0,
+                "x": 210,
+                "y": 50,
+                "size": 32,
+                "rotation": 0,
+                "color": "#141414",
+                "height": "9ft",
+            },
+            {"kind": "legend", "page": 0, "x": 16, "y": 100, "width": 280},
+        ],
+        1,
+        ids,
+    )
+    check("plain number height is inches", height_parsed[0].get("height") == '48"')
+    check("a switch can store a height but it is not an outlet height", height_parsed[2].get("height") == "9ft")
+    height_pdf = export_pdf(height_raw, height_parsed, by_id)
+    height_doc = pymupdf.open(stream=height_pdf, filetype="pdf")
+    height_text = height_doc[0].get_text()
+    height_doc.close()
+    check("outlet height exports under the symbol", '48"' in height_text, height_text[:300])
+    check("legend lists the outlet height on its own", "Duplex outlet 48\"" in height_text, height_text[:500])
+    check("legend still lists the outlet that has no height", "Duplex outlet\n" in height_text or "\nDuplex outlet\n" in f"\n{height_text}\n")
+    check("switch height stays off the sheet and the legend", "9ft" not in height_text, height_text[:500])
     check(
         "tiny white box rejected",
         rejected([{"kind": "whitebox", "page": 0, "x1": 10, "y1": 10, "x2": 12, "y2": 40}], "too small"),
+    )
+    check(
+        "bad height rejected",
+        rejected(
+            [{
+                "kind": "symbol",
+                "symbolId": "duplex",
+                "page": 0,
+                "x": 40,
+                "y": 40,
+                "size": 28,
+                "color": "#141414",
+                "height": "<script>",
+            }],
+            "bad height",
+        ),
     )
 
     spun_box = pymupdf.open()
@@ -1268,7 +1409,17 @@ def main():
     )
     check(
         "help notes the added symbols",
-        b"4 in and 6 in cans" in body and b"hardwired EV charger" in body,
+        b"4 in and 6 in cans" in body and b"hardwired EV charger" in body and b"48 in outlets" not in body,
+    )
+    check(
+        "help notes outlet height and recent symbols",
+        b"type a height" in body and b"Recent symbols" in body and b'id="heightInput"' in body,
+    )
+    check(
+        "help notes outlets sit beside the wall",
+        b"open side of that line" in body
+        and b"lines run out from the wall" in body
+        and b"turns to follow the wall" in body,
     )
     scripts = re.findall(rb'<script src="(/static/[a-z]+\.js)"></script>', home)
     check("page loads every script", len(scripts) == 6 and scripts[-1] == b"/static/app.js", str(scripts))

@@ -6,14 +6,44 @@ import math
 
 import pymupdf
 
-from elecplan.export import export_pdf
+from elecplan.export import clean_height, export_pdf
 
 
-def choose_legend_symbols(symbols: list[dict], symbol_ids) -> list[dict]:
-    """Catalog entries for the symbols on the plan, in catalog order.
+def _legend_id(raw) -> str:
+    if not isinstance(raw, str):
+        raise ValueError("bad symbols")
+    sid = raw.strip()
+    if not sid or len(sid) > 80 or any(ord(ch) < 32 for ch in sid):
+        raise ValueError("bad symbols")
+    return sid
+
+
+def _named_legend_symbol(sym: dict, raw_name) -> dict:
+    """Keep the catalog name, or that name plus an outlet height."""
+    base = str(sym.get("name") or "")
+    if raw_name is None or raw_name == base:
+        return sym
+    if not isinstance(raw_name, str):
+        raise ValueError("bad symbols")
+    prefix = base + " "
+    if not raw_name.startswith(prefix):
+        raise ValueError("bad symbols")
+    try:
+        height = clean_height(raw_name[len(prefix):])
+    except ValueError as exc:
+        raise ValueError("bad symbols") from exc
+    if sym.get("category") != "receptacles" or not height or raw_name != f"{base} {height}":
+        raise ValueError("bad symbols")
+    return {**sym, "name": f"{base} {height}"}
+
+
+def choose_legend_symbols(symbols: list[dict], symbol_ids, names=None) -> list[dict]:
+    """Catalog entries for the symbols on the plan.
 
     Unknown ids are skipped. An empty result is refused so a legend sheet
-    is not a blank page.
+    is not a blank page. Without names, the result is one row per id in
+    catalog order. With names, each id can repeat for a different outlet height,
+    in the order given.
     """
     if symbol_ids is None:
         symbol_ids = []
@@ -21,15 +51,25 @@ def choose_legend_symbols(symbols: list[dict], symbol_ids) -> list[dict]:
         raise ValueError("bad symbols")
     if len(symbol_ids) > 500:
         raise ValueError("too many symbols")
-    wanted = set()
-    for raw in symbol_ids:
-        if not isinstance(raw, str):
-            raise ValueError("bad symbols")
-        sid = raw.strip()
-        if not sid or len(sid) > 80 or any(ord(ch) < 32 for ch in sid):
-            raise ValueError("bad symbols")
-        wanted.add(sid)
-    chosen = [sym for sym in symbols if sym.get("id") in wanted]
+    if names is None:
+        wanted = {_legend_id(raw) for raw in symbol_ids}
+        chosen = [sym for sym in symbols if sym.get("id") in wanted]
+        if not chosen:
+            raise ValueError("There are no symbols on the plan to list")
+        return chosen
+    if not isinstance(names, list) or len(names) != len(symbol_ids):
+        raise ValueError("bad symbols")
+    by_id = {}
+    for sym in symbols:
+        sid = sym.get("id")
+        if isinstance(sid, str):
+            by_id.setdefault(sid, sym)
+    chosen = []
+    for raw, raw_name in zip(symbol_ids, names):
+        sym = by_id.get(_legend_id(raw))
+        if sym is None:
+            continue
+        chosen.append(_named_legend_symbol(sym, raw_name))
     if not chosen:
         raise ValueError("There are no symbols on the plan to list")
     return chosen

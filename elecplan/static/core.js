@@ -24,6 +24,7 @@ const SCALE_STANDARDS = [
 
 const LAYERS = ["Power", "Lighting", "Low-volt", "Circuitry"];
 const SNAP_RADIUS = 12;
+const WALL_SIDE = 0.36;
 const HIT_SCALE = 0.65;
 const GANG_PITCH = 0.6;
 
@@ -47,6 +48,7 @@ const state = {
   noteSize: 12,
   snap: false,
   showCircuits: false,
+  outletHeight: "",
   exportAllLayers: false,
   hiddenLayers: new Set(),
   undo: [],
@@ -75,7 +77,9 @@ let symbolsById = {};
 let sizeUndoArmed = false;
 let noteUndoArmed = false;
 let circuitUndoArmed = false;
+let heightUndoArmed = false;
 let openCategories = new Set();
+let recentSymbols = [];
 const LAYOUT_KEY = "planmarks.layout";
 
 const SVGNS = "http://www.w3.org/2000/svg";
