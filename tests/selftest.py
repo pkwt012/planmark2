@@ -301,6 +301,15 @@ def main():
         "legend lists each outlet height",
         [item["name"] for item in named] == ["Duplex outlet 48\"", "Duplex outlet"],
     )
+    named_amps = choose_legend_symbols(
+        lib["symbols"],
+        ["furnace", "furnace", "ac"],
+        ["Furnace 30A", "Furnace", "A/C 40A 240V"],
+    )
+    check(
+        "legend lists each equipment ampacity",
+        [item["name"] for item in named_amps] == ["Furnace 30A", "Furnace", "A/C 40A 240V"],
+    )
     try:
         choose_legend_symbols(lib["symbols"], ["switch"], ['Single-pole switch 48"'])
         check("height stays off a switch legend", False)
@@ -1090,9 +1099,91 @@ def main():
     check("legend lists the outlet height on its own", "Duplex outlet 48\"" in height_text, height_text[:500])
     check("legend still lists the outlet that has no height", "Duplex outlet\n" in height_text or "\nDuplex outlet\n" in f"\n{height_text}\n")
     check("switch height stays off the sheet and the legend", "9ft" not in height_text, height_text[:500])
+    amps_parsed = parse_placements(
+        [
+            {
+                "kind": "symbol",
+                "symbolId": "furnace",
+                "page": 0,
+                "x": 80,
+                "y": 140,
+                "size": 36,
+                "rotation": 0,
+                "color": "#141414",
+                "amps": "30",
+            },
+            {
+                "kind": "symbol",
+                "symbolId": "furnace",
+                "page": 0,
+                "x": 160,
+                "y": 140,
+                "size": 36,
+                "rotation": 0,
+                "color": "#141414",
+            },
+            {
+                "kind": "symbol",
+                "symbolId": "ac",
+                "page": 0,
+                "x": 240,
+                "y": 140,
+                "size": 36,
+                "rotation": 90,
+                "color": "#141414",
+                "amps": "40a 240v",
+            },
+            {
+                "kind": "symbol",
+                "symbolId": "duplex",
+                "page": 0,
+                "x": 40,
+                "y": 180,
+                "size": 28,
+                "rotation": 0,
+                "color": "#141414",
+                "amps": "20",
+            },
+            {"kind": "legend", "page": 0, "x": 16, "y": 160, "width": 280},
+        ],
+        1,
+        ids,
+    )
+    check("plain number ampacity is amps", amps_parsed[0].get("amps") == "30A")
+    check("typed ampacity keeps the voltage", amps_parsed[2].get("amps") == "40a 240v")
+    check("an outlet can store amps but it is not an equipment rating", amps_parsed[3].get("amps") == "20A")
+    amps_src = pymupdf.open()
+    amps_src.new_page(width=720, height=640)
+    amps_raw = amps_src.tobytes()
+    amps_src.close()
+    amps_pdf = export_pdf(amps_raw, amps_parsed, by_id)
+    amps_doc = pymupdf.open(stream=amps_pdf, filetype="pdf")
+    amps_text = amps_doc[0].get_text()
+    amps_doc.close()
+    check("equipment ampacity exports under the symbol", amps_text.count("30A") >= 2, amps_text[:600])
+    check("legend lists the furnace ampacity on its own", "Furnace 30A" in amps_text, amps_text[:700])
+    check("legend still lists the furnace that has no ampacity", "\nFurnace\n" in f"\n{amps_text}\n")
+    check("a typed rating exports as typed", "40a 240v" in amps_text, amps_text[:700])
+    check("outlet ampacity stays off the sheet and the legend", "20A" not in amps_text, amps_text[:700])
     check(
         "tiny white box rejected",
         rejected([{"kind": "whitebox", "page": 0, "x1": 10, "y1": 10, "x2": 12, "y2": 40}], "too small"),
+    )
+    check(
+        "bad amps rejected",
+        rejected(
+            [{
+                "kind": "symbol",
+                "symbolId": "furnace",
+                "page": 0,
+                "x": 40,
+                "y": 40,
+                "size": 28,
+                "color": "#141414",
+                "amps": "<script>",
+            }],
+            "bad amps",
+        ),
     )
     check(
         "bad height rejected",
@@ -1412,14 +1503,31 @@ def main():
         b"4 in and 6 in cans" in body and b"hardwired EV charger" in body and b"48 in outlets" not in body,
     )
     check(
-        "help notes outlet height and recent symbols",
-        b"type a height" in body and b"Recent symbols" in body and b'id="heightInput"' in body,
+        "help notes outlet height and most-used symbols",
+        b"type a height" in body and b"Most used stays at the top" in body and b'id="heightInput"' in body,
+    )
+    check(
+        "help notes equipment ampacity",
+        b"type an ampacity" in body and b'id="ampsInput"' in body,
     )
     check(
         "help notes outlets sit beside the wall",
         b"open side of that line" in body
         and b"lines run out from the wall" in body
         and b"turns to follow the wall" in body,
+    )
+    check(
+        "commands sit on one ribbon",
+        b'id="tabHome"' in body
+        and b'id="tabSheets"' in body
+        and b'id="tabLayers"' in body
+        and b'id="tabView"' in body
+        and b'id="tabExport"' in body
+        and body.count(b'id="openBtn"') == 1
+        and body.count(b'id="saveBtn"') == 1
+        and body.count(b'id="loadBtn"') == 1
+        and body.count(b'id="exportBtn"') == 1
+        and body.count(b'id="emptyOpen"') == 1,
     )
     scripts = re.findall(rb'<script src="(/static/[a-z]+\.js)"></script>', home)
     check("page loads every script", len(scripts) == 6 and scripts[-1] == b"/static/app.js", str(scripts))
