@@ -49,10 +49,19 @@ function paletteSection(title, items, categoryId) {
   return section;
 }
 
-function rememberSymbol(id) {
-  if (!id || !symbolsById[id]) return;
-  recentSymbols = [id, ...recentSymbols.filter((item) => item !== id)].slice(0, 6);
-  saveLayout();
+function mostUsedSymbols() {
+  if (!library) return [];
+  const counts = new Map();
+  const order = new Map(library.symbols.map((sym, index) => [sym.id, index]));
+  for (const item of state.placements) {
+    if (!item.symbolId || !symbolsById[item.symbolId]) continue;
+    if (!(isSymbol(item) || item.kind === "run")) continue;
+    counts.set(item.symbolId, (counts.get(item.symbolId) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || (order.get(a[0]) ?? 999) - (order.get(b[0]) ?? 999))
+    .slice(0, 6)
+    .map(([id]) => symbolsById[id]);
 }
 
 function renderPalette() {
@@ -60,10 +69,10 @@ function renderPalette() {
   const scroll = palette.scrollTop;
   const query = ($("filter").value || "").trim().toLowerCase();
   palette.innerHTML = "";
-  const recent = recentSymbols
-    .map((id) => symbolsById[id])
-    .filter((sym) => sym && (!query || symbolHay(sym).includes(query)));
-  if (recent.length) palette.appendChild(paletteSection("Recent", recent, ""));
+  const ranked = mostUsedSymbols();
+  mostUsedKey = ranked.map((sym) => sym.id).join("\n");
+  const recent = ranked.filter((sym) => !query || symbolHay(sym).includes(query));
+  if (recent.length) palette.appendChild(paletteSection("Most used", recent, ""));
   for (const cat of library.categories) {
     const items = library.symbols.filter((sym) => {
       if (sym.category !== cat.id) return false;
@@ -80,6 +89,13 @@ function renderPalette() {
     palette.appendChild(empty);
   }
   palette.scrollTop = scroll;
+}
+
+function refreshMostUsed() {
+  if (!library || !Array.isArray(library.symbols) || !library.symbols.length) return;
+  const next = mostUsedSymbols().map((sym) => sym.id).join("\n");
+  if (next === mostUsedKey) return;
+  renderPalette();
 }
 
 function buildSymbolSelect() {
@@ -129,7 +145,6 @@ function toggleArm(id) {
   state.armedId = was ? null : id;
   if (state.armedId && isRunSymbol(sym)) state.tool = "run";
   if (state.armedId && sym) {
-    rememberSymbol(state.armedId);
     openCategories.add(sym.category);
     saveLayout();
   }
@@ -165,35 +180,39 @@ function syncInspector() {
   const sym = state.armedId ? symbolsById[state.armedId] : null;
   const symbolLike = isSymbol(p);
   const hint = $("toolHint");
-  if (state.calibStep === 1) hint.textContent = "Click the first end of a known length.";
-  else if (state.calibStep === 2) hint.textContent = "Click the other end.";
-  else if (state.calibStep === 3) hint.textContent = "Enter how long that distance is, then Apply.";
-  else if (state.tool === "line" && state.lineDraft) hint.textContent = "Click the next point. A point on a symbol stays attached. Esc cancels this segment.";
-  else if (state.tool === "line") hint.textContent = "Click the first point of a dashed line. Snap it to a symbol to keep that end attached. Esc puts the tool away.";
-  else if (state.tool === "layout" && state.layoutDraft) hint.textContent = "Click the opposite corner. Hold Shift for a square. Esc cancels this rectangle.";
-  else if (state.tool === "layout") hint.textContent = "Click one corner, then the opposite corner. This draws a construction line. Symbols snap onto it. Esc puts the tool away.";
-  else if (state.tool === "whitebox" && state.whiteboxDraft) hint.textContent = "Click the opposite corner. Hold Shift for a square. Esc cancels this white box.";
-  else if (state.tool === "whitebox") hint.textContent = "Click one corner, then the opposite corner. The white box covers the plan under the symbols. Esc puts the tool away.";
-  else if (state.tool === "arrow" && state.arrowDraft) hint.textContent = "Click where the arrow points. Esc cancels this arrow.";
-  else if (state.tool === "arrow") hint.textContent = "Click the first point, then click where the arrow points. Esc puts the tool away.";
-  else if (state.tool === "run" && state.runDraft) hint.textContent = "Click the other end. Esc cancels this run.";
-  else if (state.tool === "run") hint.textContent = (sym && sym.hint) || "Click one end, then the other. Esc puts the tool away.";
-  else if (state.tool === "note") hint.textContent = "Click the sheet, then type a short label. A note is text, so it stays out of the symbol legend and the counts.";
-  else if (state.tool === "legend") hint.textContent = "Click the sheet to drop a key of the symbols placed on the plan.";
-  else if (sym) hint.textContent = sym.hint || `Click the plan to place ${sym.name}. Esc puts the tool away.`;
-  else if (p && p.kind === "line" && p.guide) hint.textContent = "Construction line. Click a symbol, then click the line to place it. Drag the line to move it.";
-  else if (p && p.kind === "line") hint.textContent = p.a1 || p.a2
+  const say = (text) => {
+    hint.textContent = text;
+    hint.title = text;
+  };
+  if (state.calibStep === 1) say("Click the first end of a known length.");
+  else if (state.calibStep === 2) say("Click the other end.");
+  else if (state.calibStep === 3) say("Enter how long that distance is, then Apply.");
+  else if (state.tool === "line" && state.lineDraft) say("Click the next point. A point on a symbol stays attached. Esc cancels this segment.");
+  else if (state.tool === "line") say("Click the first point of a dashed line. Snap it to a symbol to keep that end attached. Esc puts the tool away.");
+  else if (state.tool === "layout" && state.layoutDraft) say("Click the opposite corner. Hold Shift for a square. Esc cancels this rectangle.");
+  else if (state.tool === "layout") say("Click one corner, then the opposite corner. This draws a construction line. Symbols snap onto it. Esc puts the tool away.");
+  else if (state.tool === "whitebox" && state.whiteboxDraft) say("Click the opposite corner. Hold Shift for a square. Esc cancels this white box.");
+  else if (state.tool === "whitebox") say("Click one corner, then the opposite corner. The white box covers the plan under the symbols. Esc puts the tool away.");
+  else if (state.tool === "arrow" && state.arrowDraft) say("Click where the arrow points. Esc cancels this arrow.");
+  else if (state.tool === "arrow") say("Click the first point, then click where the arrow points. Esc puts the tool away.");
+  else if (state.tool === "run" && state.runDraft) say("Click the other end. Esc cancels this run.");
+  else if (state.tool === "run") say((sym && sym.hint) || "Click one end, then the other. Esc puts the tool away.");
+  else if (state.tool === "note") say("Click the sheet, then type a short label. A note is text, so it stays out of the symbol legend and the counts.");
+  else if (state.tool === "legend") say("Click the sheet to drop a key of the symbols placed on the plan.");
+  else if (sym) say(sym.hint || `Click the plan to place ${sym.name}. Esc puts the tool away.`);
+  else if (p && p.kind === "line" && p.guide) say("Construction line. Click a symbol, then click the line to place it. Drag the line to move it.");
+  else if (p && p.kind === "line") say(p.a1 || p.a2
     ? "A blue end stays on its symbol. Drag that end away to disconnect it. Dragging the line also disconnects it."
-    : "Drag the line to move it. Drag an amber end to change it.";
-  else if (p && p.kind === "arrow") hint.textContent = "Drag the arrow to move it. Drag an amber end to change it.";
-  else if (p && p.kind === "run") hint.textContent = "Drag the run to move it. Drag an amber end to change its length.";
-  else if (p && p.kind === "note") hint.textContent = "Edit the label here. Drag it on the sheet. Notes are not listed in the legend or the counts.";
-  else if (p && p.kind === "legend") hint.textContent = "Drag the legend. The slider changes how wide it is.";
-  else if (p && p.kind === "whitebox") hint.textContent = "Drag the white box to move it. Drag an amber corner to resize it. Shift keeps a corner square.";
-  else if (p && p.groupId && groupMembers(p.groupId).length >= 2) hint.textContent = "This switch is in a multi-gang box. Drag moves the whole box. Each switch still takes its own dashed line. Ungroup separates them.";
-  else if (pickedSwitches().length >= 2) hint.textContent = "Group switches packs these into one box. Each switch still takes its own dashed line.";
-  else if (p) hint.textContent = symbolsById[p.symbolId] ? symbolsById[p.symbolId].hint : "Drag to move. Drag the handle to rotate.";
-  else hint.textContent = state.doc ? "Pick a symbol, then click the sheet." : "Open a plan, pick a symbol, then click the sheet to place it.";
+    : "Drag the line to move it. Drag an amber end to change it.");
+  else if (p && p.kind === "arrow") say("Drag the arrow to move it. Drag an amber end to change it.");
+  else if (p && p.kind === "run") say("Drag the run to move it. Drag an amber end to change its length.");
+  else if (p && p.kind === "note") say("Edit the label here. Drag it on the sheet. Notes are not listed in the legend or the counts.");
+  else if (p && p.kind === "legend") say("Drag the legend. The slider changes how wide it is.");
+  else if (p && p.kind === "whitebox") say("Drag the white box to move it. Drag an amber corner to resize it. Shift keeps a corner square.");
+  else if (p && p.groupId && groupMembers(p.groupId).length >= 2) say("This switch is in a multi-gang box. Drag moves the whole box. Each switch still takes its own dashed line. Ungroup separates them.");
+  else if (pickedSwitches().length >= 2) say("Group switches packs these into one box. Each switch still takes its own dashed line.");
+  else if (p) say(symbolsById[p.symbolId] ? symbolsById[p.symbolId].hint : "Drag to move. Drag the handle to rotate.");
+  else say(state.doc ? "Pick a symbol, then click the sheet." : "Open a plan, pick a symbol, then click the sheet to place it.");
 
   const range = $("sizeRange");
   if (p && p.kind === "legend") {
@@ -255,6 +274,7 @@ function syncInspector() {
     calibState.textContent = "Scale not set. Calibrate on a dimension line to read sizes in feet.";
     $("calibClear").hidden = true;
   }
+  calibState.title = calibState.textContent;
   $("calibForm").hidden = state.calibStep !== 3;
   $("calibBtn").textContent = state.calibStep ? "Cancel" : "Calibrate";
   $("lineBtn").classList.toggle("active", state.tool === "line");
@@ -275,7 +295,11 @@ function syncInspector() {
   $("exportLayers").checked = state.exportAllLayers;
 
   $("applySizeBox").hidden = !symbolLike;
-  if (symbolLike) $("applySizeBtn").textContent = `Apply size to all ${symbolName(p.symbolId)}`;
+  if (symbolLike) {
+    const label = `Apply size to all ${symbolName(p.symbolId)}`;
+    $("applySizeBtn").textContent = label;
+    $("applySizeBtn").title = label;
+  }
   $("selectionBox").hidden = !p;
   $("symbolField").hidden = !symbolLike;
   $("noteField").hidden = !(p && p.kind === "note");
@@ -292,6 +316,11 @@ function syncInspector() {
   $("heightField").hidden = !heightable;
   if (heightable && document.activeElement !== $("heightInput")) {
     $("heightInput").value = p.height || "";
+  }
+  const ampable = Boolean(symbolLike && takesAmps(p.symbolId));
+  $("ampsField").hidden = !ampable;
+  if (ampable && document.activeElement !== $("ampsInput")) {
+    $("ampsInput").value = p.amps || "";
   }
   $("freePlaceField").hidden = !symbolLike;
   if (symbolLike) $("freePlace").checked = p.freePlace === true;
@@ -380,8 +409,8 @@ function symbolName(id) {
 }
 
 function markCountKey(item) {
-  const height = takesHeight(item.symbolId) ? cleanHeight(item.height, true) : "";
-  return height ? `${item.symbolId}\n${height}` : item.symbolId;
+  const note = markNote(item);
+  return note ? `${item.symbolId}\n${note}` : item.symbolId;
 }
 
 function applyScope() {

@@ -25,8 +25,11 @@ function placeAt(cx, cy, shift) {
     const height = cleanHeight(state.outletHeight, true);
     if (height) mark.height = height;
   }
+  if (takesAmps(sym.id)) {
+    const amps = cleanAmps(state.equipmentAmps, true);
+    if (amps) mark.amps = amps;
+  }
   state.placements.push(mark);
-  rememberSymbol(sym.id);
   state.selectedId = mark.id;
   renderMarks();
   syncInspector();
@@ -47,6 +50,7 @@ function calibClick(pt) {
       return;
     }
     state.calibStep = 3;
+    showRibbon("sheets");
     requestAnimationFrame(() => $("calibLen").focus());
   }
   syncInspector();

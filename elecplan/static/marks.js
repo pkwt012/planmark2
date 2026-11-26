@@ -72,6 +72,13 @@ function markElement(p) {
     tag.textContent = height;
     el.appendChild(tag);
   }
+  const amps = takesAmps(p.symbolId) ? cleanAmps(p.amps, true) : "";
+  if (amps) {
+    const tag = document.createElement("div");
+    tag.className = "amps-tag";
+    tag.textContent = amps;
+    el.appendChild(tag);
+  }
   if (state.showCircuits && p.circuit) {
     const tag = document.createElement("div");
     tag.className = "circuit-tag";
@@ -169,6 +176,34 @@ function takesHeight(symbolId) {
   return Boolean(sym && sym.category === "receptacles");
 }
 
+function takesAmps(symbolId) {
+  const sym = symbolsById[symbolId];
+  return Boolean(sym && sym.category === "equipment");
+}
+
+function cleanAmps(value, quoteNumbers) {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  let text = String(value).replace(/\s+/g, " ").trim();
+  if (!text || [...text].some((ch) => ch.charCodeAt(0) < 32)) return "";
+  if (text.length > 16) text = text.slice(0, 16).trim();
+  if (!/^[0-9A-Za-z./ -]+$/.test(text)) return "";
+  // A plain number is amps. The A is added when the field is left, so typing 30 is not cut off at 3.
+  if (quoteNumbers && /^\d{1,3}(\.\d)?$/.test(text)) text += "A";
+  else if (quoteNumbers) {
+    const unit = /^(\d{1,3}(?:\.\d)?)\s*[aA]$/.exec(text);
+    if (unit) text = unit[1] + "A";
+  }
+  if (text.length > 16) return "";
+  return text;
+}
+
+function markNote(item) {
+  if (!item) return "";
+  if (takesHeight(item.symbolId)) return cleanHeight(item.height, true);
+  if (takesAmps(item.symbolId)) return cleanAmps(item.amps, true);
+  return "";
+}
+
 function cleanHeight(value, quoteNumbers) {
   if (typeof value !== "string" && typeof value !== "number") return "";
   let text = String(value).replace(/\s+/g, " ").trim();
@@ -190,8 +225,8 @@ function heightRank(height) {
 
 function symbolLabel(p) {
   const name = symbolName(p.symbolId);
-  const height = takesHeight(p.symbolId) ? cleanHeight(p.height, true) : "";
-  return height ? `${name} ${height}` : name;
+  const note = markNote(p);
+  return note ? `${name} ${note}` : name;
 }
 
 function layerOf(p) {
@@ -393,8 +428,7 @@ function usedLegendSymbols() {
     if (!(isSymbol(item) || item.kind === "run") || !item.symbolId) continue;
     if (!symbolsById[item.symbolId]) continue;
     if (!used.has(item.symbolId)) used.set(item.symbolId, new Set());
-    const height = takesHeight(item.symbolId) ? cleanHeight(item.height, true) : "";
-    used.get(item.symbolId).add(height);
+    used.get(item.symbolId).add(markNote(item));
   }
   const entries = [];
   for (const sym of library.symbols) {
@@ -827,6 +861,7 @@ function renderMarks() {
   paintGangBoxes();
   drawCalib();
   renderCounts();
+  refreshMostUsed();
 }
 
 function updateLine(p) {
