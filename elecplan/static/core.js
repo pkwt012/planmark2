@@ -49,6 +49,7 @@ const state = {
   snap: false,
   showCircuits: false,
   outletHeight: "",
+  equipmentAmps: "",
   exportAllLayers: false,
   hiddenLayers: new Set(),
   undo: [],
@@ -78,8 +79,9 @@ let sizeUndoArmed = false;
 let noteUndoArmed = false;
 let circuitUndoArmed = false;
 let heightUndoArmed = false;
+let ampsUndoArmed = false;
+let mostUsedKey = "";
 let openCategories = new Set();
-let recentSymbols = [];
 const LAYOUT_KEY = "planmarks.layout";
 
 const SVGNS = "http://www.w3.org/2000/svg";

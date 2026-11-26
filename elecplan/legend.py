@@ -6,7 +6,7 @@ import math
 
 import pymupdf
 
-from elecplan.export import clean_height, export_pdf
+from elecplan.export import clean_amps, clean_height, export_pdf
 
 
 def _legend_id(raw) -> str:
@@ -19,7 +19,7 @@ def _legend_id(raw) -> str:
 
 
 def _named_legend_symbol(sym: dict, raw_name) -> dict:
-    """Keep the catalog name, or that name plus an outlet height."""
+    """Keep the catalog name, or that name plus an outlet height or an equipment ampacity."""
     base = str(sym.get("name") or "")
     if raw_name is None or raw_name == base:
         return sym
@@ -28,13 +28,19 @@ def _named_legend_symbol(sym: dict, raw_name) -> dict:
     prefix = base + " "
     if not raw_name.startswith(prefix):
         raise ValueError("bad symbols")
+    category = sym.get("category")
     try:
-        height = clean_height(raw_name[len(prefix):])
+        if category == "receptacles":
+            note = clean_height(raw_name[len(prefix):])
+        elif category == "equipment":
+            note = clean_amps(raw_name[len(prefix):])
+        else:
+            raise ValueError("bad symbols")
     except ValueError as exc:
         raise ValueError("bad symbols") from exc
-    if sym.get("category") != "receptacles" or not height or raw_name != f"{base} {height}":
+    if not note or raw_name != f"{base} {note}":
         raise ValueError("bad symbols")
-    return {**sym, "name": f"{base} {height}"}
+    return {**sym, "name": f"{base} {note}"}
 
 
 def choose_legend_symbols(symbols: list[dict], symbol_ids, names=None) -> list[dict]:

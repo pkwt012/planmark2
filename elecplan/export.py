@@ -51,6 +51,9 @@ def _optional_text(value, label: str, limit: int) -> str | None:
 
 _HEIGHT_CHARS = re.compile(r"^[0-9A-Za-z\"'./ -]+$")
 _HEIGHT_NUMBER = re.compile(r"^\d{1,3}(?:\.\d)?$")
+_AMPS_CHARS = re.compile(r"^[0-9A-Za-z./ -]+$")
+_AMPS_NUMBER = re.compile(r"^\d{1,3}(?:\.\d)?$")
+_AMPS_UNIT = re.compile(r"^(\d{1,3}(?:\.\d)?)\s*[aA]$")
 
 
 def clean_height(value) -> str | None:
@@ -64,6 +67,24 @@ def clean_height(value) -> str | None:
         text += '"'
     if len(text) > 12:
         raise ValueError("bad height")
+    return text
+
+
+def clean_amps(value) -> str | None:
+    """Equipment ampacity. A plain number such as 30 is stored as 30A."""
+    text = _optional_text(value, "amps", 16)
+    if text is None:
+        return None
+    if not _AMPS_CHARS.fullmatch(text):
+        raise ValueError("bad amps")
+    if _AMPS_NUMBER.fullmatch(text):
+        text += "A"
+    else:
+        unit = _AMPS_UNIT.fullmatch(text)
+        if unit:
+            text = unit.group(1) + "A"
+    if len(text) > 16:
+        raise ValueError("bad amps")
     return text
 
 
@@ -264,6 +285,11 @@ def parse_placements(raw, page_count: int, symbol_ids: set[str], run_ids: set[st
         if item.get("height") not in (None, ""):
             try:
                 parsed["height"] = clean_height(item.get("height"))
+            except ValueError as exc:
+                raise ValueError(f"placement {index}: {exc}") from exc
+        if item.get("amps") not in (None, ""):
+            try:
+                parsed["amps"] = clean_amps(item.get("amps"))
             except ValueError as exc:
                 raise ValueError(f"placement {index}: {exc}") from exc
         out.append(parsed)
@@ -651,7 +677,7 @@ def _erase_under_whiteboxes(doc: pymupdf.Document, boxes: list[dict]) -> None:
 
 
 def _draw_height_tag(page, x: float, y: float, size: float, text: str, oc: int = 0) -> None:
-    """Height under an outlet. It stays upright when the outlet rotates."""
+    """A short note under a symbol, such as an outlet height or an equipment ampacity. It stays upright when the symbol rotates."""
     label = str(text or "").strip()
     if not label:
         return
@@ -730,7 +756,7 @@ def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str
     """Symbols placed on a visible layer, in catalog order.
 
     A hidden layer stays off the key. One placement is enough, including a run.
-    An outlet height gets its own row. Notes, arrows, dashed lines, legends,
+    An outlet height or an equipment ampacity gets its own row. Notes, arrows, dashed lines, legends,
     and white boxes are not symbols.
     """
     used: dict[str, set[str]] = {}
@@ -743,18 +769,20 @@ def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str
             continue
         if (item.get("layer") or "Power") in hidden:
             continue
-        height = ""
+        note = ""
         sym = symbols_by_id[sid]
         if sym.get("category") == "receptacles" and item.get("height"):
-            height = str(item["height"])
-        used.setdefault(sid, set()).add(height)
+            note = str(item["height"])
+        elif sym.get("category") == "equipment" and item.get("amps"):
+            note = str(item["amps"])
+        used.setdefault(sid, set()).add(note)
     entries = []
     for sid, sym in symbols_by_id.items():
         if sid not in used:
             continue
-        for height in sorted(used[sid], key=_height_rank):
-            if height:
-                entries.append({**sym, "name": f"{sym['name']} {height}"})
+        for note in sorted(used[sid], key=_height_rank):
+            if note:
+                entries.append({**sym, "name": f"{sym['name']} {note}"})
             else:
                 entries.append(sym)
     return entries
@@ -897,6 +925,8 @@ def export_pdf(
             sym = symbols_by_id[item["symbolId"]]
             if item.get("height") and sym.get("category") == "receptacles":
                 _draw_height_tag(page, x, y, size, item["height"], oc)
+            if item.get("amps") and sym.get("category") == "equipment":
+                _draw_height_tag(page, x, y, size, item["amps"], oc)
             if show_circuits and item.get("circuit"):
                 _draw_circuit_tag(page, x + size / 2 + 2, y - size / 2 + 7, item["circuit"], oc)
         if revise:

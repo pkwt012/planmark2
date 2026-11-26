@@ -340,6 +340,8 @@ function applyProject(proj, { quiet = false } = {}) {
     if (symbolCircuit) symbol.circuit = symbolCircuit;
     const height = takesHeight(item.symbolId) ? cleanHeight(item.height, true) : "";
     if (height) symbol.height = height;
+    const amps = takesAmps(item.symbolId) ? cleanAmps(item.amps, true) : "";
+    if (amps) symbol.amps = amps;
     if (item.freePlace === true) symbol.freePlace = true;
     if (isSwitchSymbol(symbol)) {
       const groupId = typeof item.groupId === "string" ? item.groupId : "";
