@@ -83,7 +83,7 @@
             <button type="button" data-size="42">Large</button>
             <button type="button" id="sizeOneFoot" disabled title="Make the symbol box one foot on the plan">1 ft</button>
           </div>
-          <label class="check-line" title="Snap a symbol’s center to a strong line on the plan. Shift places or drags one symbol freely. Floor plugs, ceiling lights, and free-place marks stay where you put them.">
+          <label class="check-line" title="Snap a light onto a plan line. An outlet or switch sits on the open side of the wall. Outlet lines run out from the wall, and a switch turns to follow it. Shift places or drags one symbol freely. Floor plugs, ceiling lights, and free-place marks stay where you put them.">
             <input type="checkbox" id="snapToggle"> Snap to plan lines
           </label>
           <div id="applySizeBox" class="apply-size" hidden>
@@ -124,6 +124,9 @@
           </label>
           <label class="field" id="circuitField" hidden>Circuit
             <input id="circuitInput" type="text" maxlength="24" aria-label="Circuit" placeholder="Blank">
+          </label>
+          <label class="field" id="heightField" hidden title="Prints under this outlet. A plain number is inches, so 48 becomes 48&quot;.">Height
+            <input id="heightInput" type="text" maxlength="12" aria-label="Outlet height" placeholder="48">
           </label>
           <label class="check-line" id="freePlaceField" hidden title="This mark ignores snap. Floor plugs and ceiling lights already ignore it.">
             <input type="checkbox" id="freePlace"> Free place
@@ -234,11 +237,13 @@
       <li>Shift-click two to five nearby switches, then Group switches. They pack tightly, about 0.6 of a symbol apart, and each switch still takes its own dashed line. Dragging one moves the whole box. Ungroup separates them.</li>
       <li>Light layout draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line to put it on the rectangle.</li>
       <li>White box covers the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, or drag an amber corner to resize it. Export paints these first, so they cover the original sheet and the symbols stay on top. Export final erases the text and scanned image under each box, so it cannot be copied or uncovered. Export all layers paints the box in its layer instead, so turning that layer off shows the plan again. The original PDF is not changed.</li>
-      <li>Snap to plan lines pulls a symbol’s center onto a strong line in the sheet. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without snapping.</li>
+      <li>Snap to plan lines pulls a light onto a strong line in the sheet, centered on that line. An outlet or a switch sits on the open side of that line, against the wall. The outlet lines run out from the wall. A switch turns to follow the wall. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without snapping.</li>
       <li>Layers are Power, Lighting, Low-volt, Circuitry, or a name you type. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new symbols, dashed lines, and other marks go on that layer. Export all layers writes each layer as a group in the PDF. A white box in that export stays with its layer.</li>
       <li>Circuit is an optional label. Circuits in the header shows it next to the symbol. Add schedule sheet lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to when it does not already have one.</li>
       <li>Under cabinet 120V and LED tape light are runs. Click one end, then the other. The words sit under the line. Esc cancels that run.</li>
-      <li>The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A, half-hot, and 48 in outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.</li>
+      <li>The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as a range hood, disposal, water heater, furnace, pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.</li>
+      <li>Recent symbols stay at the top of the list, the last few you picked.</li>
+      <li>Select an outlet and type a height, such as 48 or 18. A plain number is inches. It prints under the outlet. Counts and the legend list each height on its own. Clear the field to leave the height off. The next outlet you place keeps that height until you change it.</li>
       <li>Apply size to all copies the selected symbol’s size onto the other marks of that type. This sheet only is the usual choice. All sheets covers the whole plan.</li>
       <li>Counts lists each symbol that is on the plan. Add counts sheet puts that list on a new page.</li>
       <li>Drop legend places a key of the symbols placed on the plan. Drag it where the crew can read it. The key follows those symbols as you add or delete them. A hidden layer stays off it.</li>

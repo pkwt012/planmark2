@@ -414,6 +414,20 @@ main { grid-area: main; position: relative; min-width: 0; background: var(--bg);
 }
 .mark.whitebox.selected { box-shadow: 0 0 0 1.5px var(--accent); }
 .box-handle { pointer-events: all; cursor: nwse-resize; }
+.mark .height-tag {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-top: 1px;
+  padding: 0 2px;
+  transform: translateX(-50%);
+  font: 700 9px/1.1 Helvetica, Arial, sans-serif;
+  color: #141414;
+  background: #fff;
+  border-radius: 2px;
+  pointer-events: none;
+  white-space: nowrap;
+}
 .mark .circuit-tag {
   position: absolute;
   left: 100%;
