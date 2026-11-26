@@ -153,7 +153,10 @@ async function addLegend() {
     const res = await fetch("/api/legend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbolIds: symbols.map((sym) => sym.id) }),
+      body: JSON.stringify({
+        symbolIds: symbols.map((sym) => sym.id),
+        names: symbols.map((sym) => sym.name),
+      }),
     });
     if (!res.ok) throw new Error(await readError(res));
     const info = await res.json();
@@ -509,6 +512,34 @@ function bind() {
     if (state.showCircuits) renderMarks();
     scheduleSave();
   });
+  $("heightInput").addEventListener("focus", () => {
+    heightUndoArmed = true;
+  });
+  $("heightInput").addEventListener("input", () => {
+    const p = selected();
+    if (!p || !takesHeight(p.symbolId)) return;
+    if (heightUndoArmed) {
+      pushUndo();
+      heightUndoArmed = false;
+    }
+    const next = cleanHeight($("heightInput").value, false);
+    if (next) p.height = next;
+    else delete p.height;
+    state.outletHeight = next;
+    renderMarks();
+    scheduleSave();
+  });
+  $("heightInput").addEventListener("blur", () => {
+    const p = selected();
+    if (!p || !takesHeight(p.symbolId)) return;
+    const next = cleanHeight($("heightInput").value, true);
+    if (next) p.height = next;
+    else delete p.height;
+    state.outletHeight = next;
+    $("heightInput").value = next;
+    renderMarks();
+    scheduleSave();
+  });
   $("freePlace").addEventListener("change", () => {
     const p = selected();
     if (!isSymbol(p)) return;
@@ -613,7 +644,9 @@ function bind() {
     if (!isSymbol(p)) return;
     pushUndo();
     p.symbolId = $("symbolSelect").value;
+    if (!takesHeight(p.symbolId)) delete p.height;
     if (!state.ink) p.color = (symbolsById[p.symbolId] && symbolsById[p.symbolId].defaultColor) || "#141414";
+    rememberSymbol(p.symbolId);
     if (!isSwitchSymbol(p)) {
       delete p.groupId;
       delete p.gang;
@@ -724,6 +757,9 @@ function loadLayout() {
     if (data.toolsWidth) setLen("--tools-width", data.toolsWidth, 180, 480);
     if (typeof data.snap === "boolean") state.snap = data.snap;
     if (typeof data.exportAllLayers === "boolean") state.exportAllLayers = data.exportAllLayers;
+    if (Array.isArray(data.recent)) {
+      recentSymbols = data.recent.filter((id) => typeof id === "string").slice(0, 6);
+    }
   } catch (_err) {
     /* keep the built-in sizes */
   }
@@ -738,6 +774,7 @@ function saveLayout() {
     countsOpen: $("countsPanel").open,
     snap: state.snap,
     exportAllLayers: state.exportAllLayers,
+    recent: recentSymbols,
   };
   try {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(data));
@@ -838,6 +875,7 @@ async function init() {
   }
   library = await res.json();
   symbolsById = Object.fromEntries(library.symbols.map((sym) => [sym.id, sym]));
+  recentSymbols = recentSymbols.filter((id) => symbolsById[id]);
   buildSymbolSelect();
   buildColors();
   renderPalette();

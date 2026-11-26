@@ -33,7 +33,7 @@
       "file": "duplex.svg",
       "wall": true,
       "keywords": "receptacle plug outlet",
-      "hint": "Circle with two bars. Rotate so the bars run along the wall."
+      "hint": "Circle with two bars. The bars run out from the wall."
     },
     {
       "id": "single",
@@ -42,7 +42,7 @@
       "file": "single.svg",
       "wall": true,
       "keywords": "single receptacle one outlet",
-      "hint": "One bar, marked SINGLE. Rotate the bar along the wall."
+      "hint": "One bar, marked SINGLE. The bar runs out from the wall."
     },
     {
       "id": "gfci",
@@ -51,7 +51,7 @@
       "file": "gfci.svg",
       "wall": true,
       "keywords": "gfi gfci receptacle plug protected",
-      "hint": "Outlet marked GFI. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked GFI. The bars run out from the wall."
     },
     {
       "id": "wp",
@@ -60,7 +60,7 @@
       "file": "wp.svg",
       "wall": true,
       "keywords": "weatherproof wr wp outdoor outlet",
-      "hint": "Outlet marked WP. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked WP. The bars run out from the wall."
     },
     {
       "id": "usb",
@@ -69,7 +69,7 @@
       "file": "usb.svg",
       "wall": true,
       "keywords": "usb receptacle outlet",
-      "hint": "Outlet marked USB. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked USB. The bars run out from the wall."
     },
     {
       "id": "ev",
@@ -78,7 +78,7 @@
       "file": "ev.svg",
       "wall": true,
       "keywords": "ev charger electric vehicle outlet",
-      "hint": "Outlet marked EV. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked EV. The bars run out from the wall."
     },
     {
       "id": "outlet30",
@@ -87,7 +87,7 @@
       "file": "outlet30.svg",
       "wall": true,
       "keywords": "30 amp 240 volt outlet dryer range",
-      "hint": "Outlet marked 30A 240V. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked 30A 240V. The bars run out from the wall."
     },
     {
       "id": "outlet50",
@@ -96,7 +96,7 @@
       "file": "outlet50.svg",
       "wall": true,
       "keywords": "50 amp 240 volt outlet range stove",
-      "hint": "Outlet marked 50A 240V. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked 50A 240V. The bars run out from the wall."
     },
     {
       "id": "floor",
@@ -114,7 +114,7 @@
       "file": "eave.svg",
       "wall": true,
       "keywords": "eave plug receptacle outlet christmas lights shade",
-      "hint": "Roof over an outlet. This plug sits up under the eave. Rotate the bars along the eave."
+      "hint": "Roof over an outlet. This plug sits up under the eave. The bars run out from the eave."
     },
     {
       "id": "duplex20",
@@ -123,16 +123,7 @@
       "file": "duplex20.svg",
       "wall": true,
       "keywords": "20 amp 20a duplex receptacle outlet",
-      "hint": "Outlet marked 20A. Rotate it so the bars follow the wall."
-    },
-    {
-      "id": "outlet48",
-      "name": "48\" outlet",
-      "category": "receptacles",
-      "file": "outlet48.svg",
-      "wall": true,
-      "keywords": "48 inch 48in height outlet above floor",
-      "hint": "Outlet marked 48 inches. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked 20A. The bars run out from the wall."
     },
     {
       "id": "gfci20",
@@ -141,7 +132,7 @@
       "file": "gfci20.svg",
       "wall": true,
       "keywords": "20 amp 20a gfci gfi receptacle protected",
-      "hint": "Outlet marked 20A GFI. Rotate it so the bars follow the wall."
+      "hint": "Outlet marked 20A GFI. The bars run out from the wall."
     },
     {
       "id": "halfhot",
@@ -150,7 +141,7 @@
       "file": "halfhot.svg",
       "wall": true,
       "keywords": "half-hot switched duplex split outlet",
-      "hint": "One bar is only half length. Rotate the bars along the wall."
+      "hint": "One bar is only half length. The bars run out from the wall."
     },
     {
       "id": "clock",
@@ -159,7 +150,7 @@
       "file": "clock.svg",
       "wall": true,
       "keywords": "clock hanger clock-hanger outlet clk",
-      "hint": "Outlet with a hanger hook, marked CLK. Rotate the bars along the wall."
+      "hint": "Outlet with a hanger hook, marked CLK. The bars run out from the wall."
     },
     {
       "id": "popup",
@@ -177,7 +168,7 @@
       "file": "inlet30.svg",
       "wall": true,
       "keywords": "generator inlet 30 amp 30a",
-      "hint": "Generator inlet marked IN 30A. Arrow points in. Rotate the bars along the wall."
+      "hint": "Generator inlet marked IN 30A. Arrow points in. The bars run out from the wall."
     },
     {
       "id": "inlet50",
@@ -186,43 +177,7 @@
       "file": "inlet50.svg",
       "wall": true,
       "keywords": "generator inlet 50 amp 50a",
-      "hint": "Generator inlet marked IN 50A. Arrow points in. Rotate the bars along the wall."
-    },
-    {
-      "id": "hood",
-      "name": "Range hood",
-      "category": "receptacles",
-      "file": "hood.svg",
-      "wall": true,
-      "keywords": "range hood vent kitchen",
-      "hint": "Box marked HOOD. Rotate the box to follow the wall."
-    },
-    {
-      "id": "disposal",
-      "name": "Disposal",
-      "category": "receptacles",
-      "file": "disposal.svg",
-      "wall": false,
-      "keywords": "garbage disposal disp",
-      "hint": "Box marked DISP. Place it where the disposal sits."
-    },
-    {
-      "id": "waterheater",
-      "name": "Water heater",
-      "category": "receptacles",
-      "file": "waterheater.svg",
-      "wall": false,
-      "keywords": "water heater wh",
-      "hint": "Box marked WH. Place it where the water heater sits."
-    },
-    {
-      "id": "furnace",
-      "name": "Furnace",
-      "category": "receptacles",
-      "file": "furnace.svg",
-      "wall": false,
-      "keywords": "furnace air handler ahu hvac",
-      "hint": "Box marked AHU. Place it where the furnace or air handler sits."
+      "hint": "Generator inlet marked IN 50A. Arrow points in. The bars run out from the wall."
     },
     {
       "id": "switch",
@@ -651,6 +606,42 @@
       "wall": true,
       "keywords": "bell chime button doorbell",
       "hint": "Bell button. Rotate it to follow the wall."
+    },
+    {
+      "id": "hood",
+      "name": "Range hood",
+      "category": "equipment",
+      "file": "hood.svg",
+      "wall": true,
+      "keywords": "range hood vent kitchen",
+      "hint": "Box marked HOOD. Rotate the box to follow the wall."
+    },
+    {
+      "id": "disposal",
+      "name": "Disposal",
+      "category": "equipment",
+      "file": "disposal.svg",
+      "wall": false,
+      "keywords": "garbage disposal disp",
+      "hint": "Box marked DISP. Place it where the disposal sits."
+    },
+    {
+      "id": "waterheater",
+      "name": "Water heater",
+      "category": "equipment",
+      "file": "waterheater.svg",
+      "wall": false,
+      "keywords": "water heater wh",
+      "hint": "Box marked WH. Place it where the water heater sits."
+    },
+    {
+      "id": "furnace",
+      "name": "Furnace",
+      "category": "equipment",
+      "file": "furnace.svg",
+      "wall": false,
+      "keywords": "furnace air handler ahu hvac",
+      "hint": "Box marked AHU. Place it where the furnace or air handler sits."
     },
     {
       "id": "subpanel",

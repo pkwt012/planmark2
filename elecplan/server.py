@@ -416,10 +416,10 @@ class Session:
             raise ValueError("That PDF is larger than 80 MB")
         return self._appended(data)
 
-    def append_legend(self, symbols, symbol_ids) -> dict:
+    def append_legend(self, symbols, symbol_ids, names=None) -> dict:
         if self.doc is None or self.data is None:
             raise ValueError("Open a PDF before adding a legend")
-        chosen = choose_legend_symbols(symbols, symbol_ids)
+        chosen = choose_legend_symbols(symbols, symbol_ids, names)
         with _FITZ:
             rect = self.doc[0].rect
             legend = build_legend_pdf(chosen, rect.width, rect.height)
@@ -716,7 +716,11 @@ def _make_handler(app: App):
                     payload = json.loads(body.decode("utf-8") or "{}") if body else {}
                     if not isinstance(payload, dict):
                         raise ValueError("legend must be an object")
-                    info = app.session.append_legend(app.library["symbols"], payload.get("symbolIds"))
+                    info = app.session.append_legend(
+                        app.library["symbols"],
+                        payload.get("symbolIds"),
+                        payload.get("names"),
+                    )
                 except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                     self._json(400, {"error": str(exc)})
                     return

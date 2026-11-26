@@ -1,57 +1,77 @@
 "use strict";
 // Palette, inspector, layers, counts, schedule, size, and color.
 
+function symbolHay(sym) {
+  return `${sym.name} ${sym.keywords || ""} ${sym.category}`.toLowerCase();
+}
+
+function symbolButton(sym) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sym" + (sym.id === state.armedId ? " active" : "");
+  btn.title = sym.hint || sym.name;
+  const swatch = document.createElement("div");
+  swatch.className = "swatch";
+  swatch.innerHTML = sym.svg.replaceAll("#141414", sym.defaultColor || "#141414");
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = sym.name;
+  btn.append(swatch, name);
+  btn.addEventListener("click", () => toggleArm(sym.id));
+  return btn;
+}
+
+function paletteSection(title, items, categoryId) {
+  const section = document.createElement("details");
+  section.className = "cat";
+  section.open = categoryId ? Boolean(($("filter").value || "").trim()) || openCategories.has(categoryId) : true;
+  const summary = document.createElement("summary");
+  const chev = document.createElement("span");
+  chev.className = "chev";
+  chev.setAttribute("aria-hidden", "true");
+  chev.textContent = "▸";
+  const label = document.createElement("span");
+  label.textContent = title;
+  summary.append(chev, label);
+  section.appendChild(summary);
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  for (const sym of items) grid.appendChild(symbolButton(sym));
+  section.appendChild(grid);
+  if (categoryId) {
+    section.addEventListener("toggle", () => {
+      if (($("filter").value || "").trim()) return;
+      if (section.open) openCategories.add(categoryId);
+      else openCategories.delete(categoryId);
+      saveLayout();
+    });
+  }
+  return section;
+}
+
+function rememberSymbol(id) {
+  if (!id || !symbolsById[id]) return;
+  recentSymbols = [id, ...recentSymbols.filter((item) => item !== id)].slice(0, 6);
+  saveLayout();
+}
+
 function renderPalette() {
   const palette = $("palette");
   const scroll = palette.scrollTop;
   const query = ($("filter").value || "").trim().toLowerCase();
   palette.innerHTML = "";
+  const recent = recentSymbols
+    .map((id) => symbolsById[id])
+    .filter((sym) => sym && (!query || symbolHay(sym).includes(query)));
+  if (recent.length) palette.appendChild(paletteSection("Recent", recent, ""));
   for (const cat of library.categories) {
     const items = library.symbols.filter((sym) => {
       if (sym.category !== cat.id) return false;
       if (!query) return true;
-      const hay = `${sym.name} ${sym.keywords || ""} ${sym.category}`.toLowerCase();
-      return hay.includes(query);
+      return symbolHay(sym).includes(query);
     });
     if (!items.length) continue;
-    const section = document.createElement("details");
-    section.className = "cat";
-    section.open = Boolean(query) || openCategories.has(cat.id);
-    const title = document.createElement("summary");
-    const chev = document.createElement("span");
-    chev.className = "chev";
-    chev.setAttribute("aria-hidden", "true");
-    chev.textContent = "▸";
-    const label = document.createElement("span");
-    label.textContent = cat.name;
-    title.append(chev, label);
-    section.appendChild(title);
-    const grid = document.createElement("div");
-    grid.className = "grid";
-    for (const sym of items) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "sym" + (sym.id === state.armedId ? " active" : "");
-      btn.title = sym.hint || sym.name;
-      const swatch = document.createElement("div");
-      swatch.className = "swatch";
-      swatch.innerHTML = sym.svg.replaceAll("#141414", sym.defaultColor || "#141414");
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = sym.name;
-      btn.appendChild(swatch);
-      btn.appendChild(name);
-      btn.addEventListener("click", () => toggleArm(sym.id));
-      grid.appendChild(btn);
-    }
-    section.appendChild(grid);
-    section.addEventListener("toggle", () => {
-      if (($("filter").value || "").trim()) return;
-      if (section.open) openCategories.add(cat.id);
-      else openCategories.delete(cat.id);
-      saveLayout();
-    });
-    palette.appendChild(section);
+    palette.appendChild(paletteSection(cat.name, items, cat.id));
   }
   if (!palette.children.length) {
     const empty = document.createElement("p");
@@ -109,6 +129,7 @@ function toggleArm(id) {
   state.armedId = was ? null : id;
   if (state.armedId && isRunSymbol(sym)) state.tool = "run";
   if (state.armedId && sym) {
+    rememberSymbol(state.armedId);
     openCategories.add(sym.category);
     saveLayout();
   }
@@ -267,6 +288,11 @@ function syncInspector() {
   if (circuitable && document.activeElement !== $("circuitInput")) {
     $("circuitInput").value = p.circuit || "";
   }
+  const heightable = Boolean(symbolLike && takesHeight(p.symbolId));
+  $("heightField").hidden = !heightable;
+  if (heightable && document.activeElement !== $("heightInput")) {
+    $("heightInput").value = p.height || "";
+  }
   $("freePlaceField").hidden = !symbolLike;
   if (symbolLike) $("freePlace").checked = p.freePlace === true;
   syncLayerField(p);
@@ -353,6 +379,11 @@ function symbolName(id) {
   return (sym && sym.name) || "symbol";
 }
 
+function markCountKey(item) {
+  const height = takesHeight(item.symbolId) ? cleanHeight(item.height, true) : "";
+  return height ? `${item.symbolId}\n${height}` : item.symbolId;
+}
+
 function applyScope() {
   const picked = document.querySelector('input[name="applyScope"]:checked');
   return picked && picked.value === "all" ? "all" : "sheet";
@@ -401,13 +432,17 @@ function countRows() {
     if (!isSymbol(item) && item.kind !== "run") continue;
     if (!item.symbolId) continue;
     if (scope === "sheet" && item.page !== state.pageIndex) continue;
-    tally.set(item.symbolId, (tally.get(item.symbolId) || 0) + 1);
+    const key = markCountKey(item);
+    tally.set(key, (tally.get(key) || 0) + 1);
   }
   const catIndex = new Map(library.categories.map((cat, index) => [cat.id, index]));
   return [...tally.entries()]
-    .map(([id, count]) => {
+    .map(([key, count]) => {
+      const id = key.split("\n")[0];
       const sym = symbolsById[id];
-      return { id, count, name: sym ? sym.name : id, category: sym ? sym.category : "" };
+      const height = key.includes("\n") ? key.split("\n").slice(1).join("\n") : "";
+      const name = height ? `${sym ? sym.name : id} ${height}` : sym ? sym.name : id;
+      return { id, count, name, category: sym ? sym.category : "" };
     })
     .sort(
       (a, b) =>
@@ -449,7 +484,7 @@ function scheduleRows() {
     if (!circuit) continue;
     if (!groups.has(circuit)) groups.set(circuit, { circuit, names: [], notes: [], legs: 0 });
     const group = groups.get(circuit);
-    if (isSymbol(item)) group.names.push(symbolName(item.symbolId));
+    if (isSymbol(item)) group.names.push(symbolLabel(item));
     else if (item.kind === "run") group.names.push(runLabelOf(item) || symbolName(item.symbolId));
     else if (item.kind === "line" && !item.guide) group.legs += 1;
     else if (item.kind === "note") {
