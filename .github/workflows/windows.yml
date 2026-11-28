@@ -67,28 +67,31 @@ jobs:
           path: PlanMarks-Windows.zip
 
       - name: Publish the download
-        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.7')) }}"
+        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.8')) }}"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.7
-          name: Plan Marks 2.7
+          tag_name: v2.8
+          name: Plan Marks 2.8
           make_latest: "true"
           files: PlanMarks-Windows.zip
           body: |
-            Plan Marks 2.7. Unzip the folder, then double-click PlanMarks.exe.
+            Plan Marks 2.8. Unzip the folder, then double-click PlanMarks.exe.
             Leave the small Plan Marks window open while you work. Close it to quit.
             Keep PlanMarks.exe and the _internal folder together.
             Your PDFs stay on this computer.
             If Windows says it protected your PC, choose More info, then Run anyway.
 
             Commands sit on a ribbon: Home, Sheets, Layers, View, and Export.
-            An outlet can take a height. A plain number is inches, so 48 becomes 48". It prints under the outlet. The counts, the schedule, and the legend list each height on its own.
-            Equipment such as a furnace, a well, a sump, or an air conditioner can take an ampacity. A plain number is amps, so 30 becomes 30A. Type the whole rating when it is more than a number, such as 40A 240V. It prints under the symbol. The counts, the schedule, and the legend list each rating on its own.
-            Most used, at the top of the list, shows the six symbols placed most often on the plan. A symbol you only try once stays in its own category.
-            Range hood, disposal, water heater, and furnace are under Equipment.
-            Snap pulls a light onto a plan line. An outlet or a switch sits on the open side of the wall. Outlet lines run out from the wall. A switch turns to follow the wall.
-            The symbol list adds step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.
-            A legend lists the symbols placed on the plan. A hidden layer stays off it.
+            Every symbol can take a height. A plain number is inches, so 48 becomes 48". It prints beside the symbol. A new mark starts blank.
+            A countertop receptacle, a television, or an appliance can take an ampacity. A plain number is amps, so 30 becomes 30A. Type the whole rating when it is more than a number, such as 40A 240V. It prints beside the symbol. A new mark starts blank.
+            Letters on a switch, a detector, or equipment stay right-side up.
+            Most used, at the top of the list, shows the six symbols placed most often on the plan. List, next to the filter, shows one symbol per row.
+            Snap pulls a light onto a plan line. An outlet or a switch sits on the open side of the wall. Outlet lines run out from the wall. A switch turns to follow the wall. A switch group follows the first switch, including at a corner.
+            A dashed line continues from click to click. Enter, Esc, or a double-click finishes the chain.
+            The symbol list adds a wall oven, cooktop, dishwasher, microwave, refrigerator, washer, dryer, television, heat detector, disconnect, and a smoke/CO detector, plus step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.
+            Drop legend places a key in an open area. This sheet only is the usual choice. Refresh sheets rebuilds a legend, counts, or schedule. Delete sheet removes an added sheet.
+            A note uses the layer selected when you place it. Smoke detectors and smoke/CO detectors go on Lighting.
+            A hidden layer stays off the legend.
             Sheets you add are kept, and opening the original PDF asks whether to bring them back.
             Export final erases the text and scanned image under a white box. Export all layers paints that box in its layer, so turning the layer off shows the plan again.
             Recovery files that sit unused for 90 days are removed when the program starts.
