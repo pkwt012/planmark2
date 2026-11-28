@@ -41,6 +41,164 @@ function sheetsAddedToast(info, message) {
   toast(info.sheetsWarning || message);
 }
 
+function inferSheets(info, base) {
+  const pages = info.pages || [];
+  const sheets = [];
+  let index = Math.max(0, base);
+  while (index < pages.length) {
+    const kind = pages[index].role || "pdf";
+    let count = 1;
+    while (index + count < pages.length && (pages[index + count].role || "pdf") === kind) count += 1;
+    sheets.push({ kind, start: index, count, scope: "all", sourcePage: 0 });
+    index += count;
+  }
+  return sheets;
+}
+
+function rememberSheets(info, kind, extra) {
+  const added = Number(info.added) || 0;
+  if (!(added > 0)) return;
+  const start = Math.max(0, info.pageCount - added);
+  state.generatedSheets.push({
+    kind,
+    start,
+    count: added,
+    scope: extra && extra.scope === "sheet" ? "sheet" : "all",
+    sourcePage: extra && Number.isInteger(extra.sourcePage) ? extra.sourcePage : 0,
+  });
+}
+
+function sheetsPayload() {
+  return state.generatedSheets
+    .filter((sheet) => sheet.kind === "legend" || sheet.kind === "counts" || sheet.kind === "schedule")
+    .map((sheet) => {
+      const spec = {
+        kind: sheet.kind,
+        start: sheet.start,
+        count: sheet.count,
+        scope: sheet.scope || "all",
+        sourcePage: sheet.sourcePage || 0,
+      };
+      if (sheet.kind === "legend") {
+        const symbols = usedLegendSymbols(sheet.scope === "sheet" ? sheet.sourcePage : null);
+        spec.symbolIds = symbols.map((sym) => sym.id);
+        spec.names = symbols.map((sym) => sym.name);
+      } else if (sheet.kind === "counts") {
+        spec.rows = countRowsFor(sheet.scope === "sheet" ? "sheet" : "all", sheet.sourcePage || 0)
+          .map((row) => ({ name: row.name, count: row.count }));
+      } else {
+        spec.rows = scheduleRows();
+      }
+      return spec;
+    });
+}
+
+function applySheetShifts(info) {
+  for (const change of info.updated || []) {
+    const sheet = state.generatedSheets.find((item) => item.kind === change.kind && item.start === change.start);
+    if (sheet) sheet.count = change.count;
+  }
+  for (const shift of info.shifts || []) {
+    const at = Number(shift.at);
+    const delta = Number(shift.delta) || 0;
+    if (!delta) continue;
+    for (const item of state.placements) {
+      if (item.page >= at) item.page += delta;
+    }
+    for (const sheet of state.generatedSheets) {
+      if (sheet.start >= at) sheet.start += delta;
+    }
+  }
+  state.doc = info;
+  state.sheetRevision = (state.sheetRevision || 0) + 1;
+  state.imageKey = "";
+  state.undo = [];
+  state.redo = [];
+  state.placements = state.placements.filter((item) => item.page >= 0 && item.page < info.pageCount);
+  if (state.pageIndex >= info.pageCount) state.pageIndex = Math.max(0, info.pageCount - 1);
+  showPage(state.pageIndex);
+  renderCounts();
+  syncInspector();
+  scheduleSave();
+}
+
+async function refreshSheets() {
+  if (!state.doc) return;
+  const sheets = sheetsPayload();
+  if (!sheets.length) {
+    toast("There are no legend, counts, or schedule sheets to refresh.");
+    return;
+  }
+  setBusy(true, "Refreshing sheets…");
+  try {
+    const res = await fetch("/api/sheets/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sheets }),
+    });
+    if (!res.ok) throw new Error(await readError(res));
+    const info = await res.json();
+    applySheetShifts(info);
+    sheetsAddedToast(info, "Refreshed the legend, counts, and schedule.");
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function deleteCurrentSheet() {
+  if (!state.doc) return;
+  const index = state.pageIndex;
+  if (index < state.basePageCount) {
+    toast("This sheet is part of the original plan.");
+    return;
+  }
+  if (state.doc.pageCount < 2) {
+    toast("The plan needs at least one sheet.");
+    return;
+  }
+  setBusy(true, "Deleting sheet…");
+  try {
+    const res = await fetch("/api/sheets/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index, base: state.basePageCount }),
+    });
+    if (!res.ok) throw new Error(await readError(res));
+    const info = await res.json();
+    state.placements = state.placements.filter((item) => item.page !== index);
+    for (const item of state.placements) {
+      if (item.page > index) item.page -= 1;
+    }
+    state.generatedSheets = state.generatedSheets.flatMap((sheet) => {
+      if (index >= sheet.start && index < sheet.start + sheet.count) {
+        const next = { ...sheet, count: sheet.count - 1 };
+        return next.count > 0 ? [next] : [];
+      }
+      if (sheet.start > index) return [{ ...sheet, start: sheet.start - 1 }];
+      return [sheet];
+    });
+    state.doc = info;
+    state.sheetRevision = (state.sheetRevision || 0) + 1;
+    state.imageKey = "";
+    state.undo = [];
+    state.redo = [];
+    state.selectedId = null;
+    state.picked = new Set();
+    if (state.pageIndex >= info.pageCount) state.pageIndex = Math.max(0, info.pageCount - 1);
+    showPage(state.pageIndex);
+    renderCounts();
+    syncInspector();
+    scheduleSave();
+    sheetsAddedToast(info, "Deleted that sheet.");
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function openPdfBytes(buf, filename, { append = false } = {}) {
   setBusy(true, append ? "Adding sheets…" : "Opening plan…");
   try {
@@ -55,11 +213,15 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
     if (append) {
       const had = state.doc ? state.doc.pageCount : 0;
       state.doc = info;
+      rememberSheets(info, "pdf");
+      state.sheetRevision = (state.sheetRevision || 0) + 1;
+      state.imageKey = "";
       updatePager();
       scheduleSave();
       sheetsAddedToast(info, `Added ${info.added || info.pageCount - had} sheet${info.added === 1 ? "" : "s"}.`);
       return;
     }
+    const originalCount = info.pageCount;
     info = await settleSavedSheets(info);
     const previousMarks = state.placements.length;
     state.doc = info;
@@ -80,6 +242,9 @@ async function openPdfBytes(buf, filename, { append = false } = {}) {
     state.undo = [];
     state.redo = [];
     state.picked = new Set();
+    state.basePageCount = originalCount;
+    state.generatedSheets = inferSheets(info, originalCount);
+    state.sheetRevision = (state.sheetRevision || 0) + 1;
     state.pendingRecovery = null;
     state.browserSavedAt = "";
     const recoverBar = $("recoverBar");
@@ -161,6 +326,9 @@ async function addLegend() {
     if (!res.ok) throw new Error(await readError(res));
     const info = await res.json();
     state.doc = info;
+    rememberSheets(info, "legend", { scope: "all", sourcePage: state.pageIndex });
+    state.sheetRevision = (state.sheetRevision || 0) + 1;
+    state.imageKey = "";
     const start = Math.max(0, info.pageCount - (info.added || 1));
     showPage(start, { fit: true });
     scheduleSave();
@@ -225,6 +393,7 @@ async function exportPdf(revise) {
       ocg: state.exportAllLayers,
       hiddenLayers: [...state.hiddenLayers],
       showCircuits: state.showCircuits,
+      sheets: sheetsPayload(),
     };
     if (revise) {
       body.revise = true;
@@ -268,6 +437,14 @@ function onKeyDown(e) {
   if (e.code === "Space") {
     state.space = true;
     e.preventDefault();
+    return;
+  }
+  if (e.key === "Enter" && state.lineDraft) {
+    e.preventDefault();
+    state.lineDraft = null;
+    renderWires();
+    syncInspector();
+    setStatus();
     return;
   }
   if (e.key === "Escape") {
@@ -446,7 +623,24 @@ function bind() {
   $("whiteboxBtn").addEventListener("click", () => setTool("whitebox"));
   $("arrowBtn").addEventListener("click", () => setTool("arrow"));
   $("noteBtn").addEventListener("click", () => setTool("note"));
-  $("dropLegendBtn").addEventListener("click", () => setTool("legend"));
+  $("dropLegendBtn").addEventListener("click", () => placeLegendAuto());
+  $("refreshSheetsBtn").addEventListener("click", () => refreshSheets());
+  $("deleteSheetBtn").addEventListener("click", () => deleteCurrentSheet());
+  $("legendSheetOnly").addEventListener("change", () => {
+    const p = selected();
+    if (!p || p.kind !== "legend") return;
+    pushUndo();
+    if ($("legendSheetOnly").checked) p.sheetOnly = true;
+    else delete p.sheetOnly;
+    renderMarks();
+    syncInspector();
+    scheduleSave();
+  });
+  $("listViewBtn").addEventListener("click", () => {
+    state.paletteList = !state.paletteList;
+    applyPaletteView();
+    saveLayout();
+  });
   $("noteText").addEventListener("focus", () => {
     noteUndoArmed = true;
   });
@@ -488,6 +682,7 @@ function bind() {
     }
     pushUndo();
     p.layer = $("layerSelect").value;
+    state.activeLayer = p.layer;
     $("layerCustomField").hidden = true;
     renderMarks();
     syncInspector();
@@ -503,6 +698,7 @@ function bind() {
     }
     pushUndo();
     p.layer = name;
+    state.activeLayer = name;
     renderMarks();
     syncInspector();
     scheduleSave();
@@ -542,7 +738,6 @@ function bind() {
     const next = cleanHeight($("heightInput").value, false);
     if (next) p.height = next;
     else delete p.height;
-    state.outletHeight = next;
     renderMarks();
     scheduleSave();
   });
@@ -552,7 +747,6 @@ function bind() {
     const next = cleanHeight($("heightInput").value, true);
     if (next) p.height = next;
     else delete p.height;
-    state.outletHeight = next;
     $("heightInput").value = next;
     renderMarks();
     scheduleSave();
@@ -570,7 +764,6 @@ function bind() {
     const next = cleanAmps($("ampsInput").value, false);
     if (next) p.amps = next;
     else delete p.amps;
-    state.equipmentAmps = next;
     renderMarks();
     scheduleSave();
   });
@@ -580,7 +773,6 @@ function bind() {
     const next = cleanAmps($("ampsInput").value, true);
     if (next) p.amps = next;
     else delete p.amps;
-    state.equipmentAmps = next;
     $("ampsInput").value = next;
     renderMarks();
     scheduleSave();
@@ -718,7 +910,7 @@ function bind() {
     const p = selected();
     if (!isSymbol(p)) return;
     pushUndo();
-    p.rotation = normRot($("rotInput").value);
+    p.rotation = storeRotation(p.symbolId, $("rotInput").value);
     updateMark(p);
     scheduleSave();
   });
@@ -794,6 +986,23 @@ function setLen(name, value, min, max) {
   return next;
 }
 
+function applyPaletteView() {
+  const palette = $("palette");
+  if (palette) palette.classList.toggle("list", Boolean(state.paletteList));
+  const btn = $("listViewBtn");
+  if (!btn) return;
+  btn.setAttribute("aria-pressed", state.paletteList ? "true" : "false");
+}
+
+function syncSheetCommands() {
+  const refresh = $("refreshSheetsBtn");
+  const del = $("deleteSheetBtn");
+  if (!refresh || !del) return;
+  const open = Boolean(state.doc);
+  refresh.disabled = !open || !state.generatedSheets.some((sheet) => sheet.kind !== "pdf");
+  del.disabled = !open || state.pageIndex < state.basePageCount || state.doc.pageCount < 2;
+}
+
 function loadLayout() {
   try {
     const data = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
@@ -806,6 +1015,9 @@ function loadLayout() {
     if (data.toolsWidth) setLen("--tools-width", data.toolsWidth, 180, 480);
     if (typeof data.snap === "boolean") state.snap = data.snap;
     if (typeof data.exportAllLayers === "boolean") state.exportAllLayers = data.exportAllLayers;
+    if (typeof data.listView === "boolean") state.paletteList = data.listView;
+    if (data.countsHeight) setLen("--counts-height", data.countsHeight, 120, 640);
+    applyPaletteView();
   } catch (_err) {
     /* keep the built-in sizes */
   }
@@ -820,6 +1032,8 @@ function saveLayout() {
     countsOpen: $("countsPanel").tagName === "DETAILS" ? $("countsPanel").open : true,
     snap: state.snap,
     exportAllLayers: state.exportAllLayers,
+    listView: Boolean(state.paletteList),
+    countsHeight: readLen("--counts-height", 220),
   };
   try {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(data));
@@ -893,6 +1107,22 @@ function bindSplitters() {
     reset() {
       document.documentElement.style.removeProperty("--tools-height");
       document.documentElement.style.removeProperty("--tools-width");
+    },
+  });
+  const countsSplit = $("countsSplit");
+  if (countsSplit) dragSplitter(countsSplit, {
+    start() {
+      return { size: readLen("--counts-height", 220) };
+    },
+    move(_dx, dy, start) {
+      const max = Math.max(120, aside.clientHeight - 180);
+      setLen("--counts-height", start.size - dy, 120, Math.min(640, max));
+    },
+    nudge(dir) {
+      setLen("--counts-height", readLen("--counts-height", 220) - dir, 120, 640);
+    },
+    reset() {
+      document.documentElement.style.removeProperty("--counts-height");
     },
   });
   const sideSplit = $("sideSplit");

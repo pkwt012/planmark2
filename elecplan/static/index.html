@@ -54,7 +54,7 @@
               <div class="ribbon-controls place-controls">
                 <button type="button" id="noteBtn" title="Add a short label. Click the sheet, then type. Notes stay out of the legend and the counts." disabled>Note</button>
                 <button type="button" id="arrowBtn" title="Draw an arrow. Click the tail, then where it points." disabled>Arrow</button>
-                <button type="button" id="lineBtn" title="Draw a dashed line between lights. Snap an end to a symbol and it stays attached." disabled>Dashed line</button>
+                <button type="button" id="lineBtn" title="Draw a dashed line. Each click adds the next point. Enter, Esc, or double-click finishes. Snap an end to a symbol and it stays attached." disabled>Dashed line</button>
                 <button type="button" id="layoutBtn" title="Draw a construction rectangle. Click two opposite corners. Symbols snap onto the line. Shift makes a square." disabled>Light layout</button>
                 <button type="button" id="whiteboxBtn" title="Cover part of the plan with an opaque white rectangle. Export final erases what is under it. Export all layers keeps the box in its layer. Click two opposite corners. Shift makes a square." disabled>White box</button>
               </div>
@@ -91,16 +91,21 @@
           </div>
           <div id="ribbonSheets" class="ribbon-page" role="tabpanel" data-tab="sheets" aria-labelledby="tabSheets" hidden>
             <div class="ribbon-group">
-              <div class="ribbon-controls">
+              <div class="ribbon-controls legend-controls">
                 <button type="button" id="legendBtn" title="Add a sheet that lists the symbols placed on the plan" disabled>Legend</button>
-                <button type="button" id="dropLegendBtn" title="Drop a key of the symbols placed on the plan" disabled>Drop legend</button>
+                <button type="button" id="dropLegendBtn" title="Place a key in the largest empty area. This sheet only lists symbols on the current sheet." disabled>Drop legend</button>
+                <label class="check-line" title="Checked: the dropped key lists symbols on this sheet. Uncheck it to list every sheet.">
+                  <input type="checkbox" id="legendSheetOnly" checked> This sheet only
+                </label>
               </div>
               <div class="ribbon-caption">Legend</div>
             </div>
             <div class="ribbon-group">
-              <div class="ribbon-controls">
+              <div class="ribbon-controls sheet-controls">
                 <button type="button" id="countsSheetBtn">Add counts sheet</button>
                 <button type="button" id="scheduleBtn" disabled title="Add a page that lists each circuit, what is on it, and notes">Add schedule sheet</button>
+                <button type="button" id="refreshSheetsBtn" disabled title="Rebuild legend, counts, and schedule sheets from the marks on the plan">Refresh sheets</button>
+                <button type="button" id="deleteSheetBtn" disabled title="Remove this added sheet. The plan pages stay.">Delete sheet</button>
               </div>
               <div class="ribbon-caption">Sheets</div>
             </div>
@@ -164,17 +169,6 @@
               </div>
               <div class="ribbon-caption">Show</div>
             </div>
-            <div class="ribbon-group counts-group">
-              <div id="countsPanel" class="counts ribbon-controls">
-                <div class="counts-scope" role="radiogroup" aria-label="Which sheets to count">
-                  <label><input type="radio" name="countScope" value="sheet" checked> This sheet</label>
-                  <label><input type="radio" name="countScope" value="all"> All sheets</label>
-                </div>
-                <ul id="countsList"></ul>
-                <p id="countsEmpty" class="hint">No symbols yet.</p>
-              </div>
-              <div class="ribbon-caption">Counts</div>
-            </div>
           </div>
           <div id="ribbonExport" class="ribbon-page" role="tabpanel" data-tab="export" aria-labelledby="tabExport" hidden>
             <div class="ribbon-group">
@@ -195,8 +189,19 @@
     <aside>
       <div class="filter">
         <input id="filter" type="search" placeholder="Filter symbols — outlet, switch, light…" autocomplete="off">
+        <button type="button" id="listViewBtn" aria-pressed="false" title="One symbol per row. Click again for tiles.">List</button>
       </div>
       <div id="palette"></div>
+      <div id="countsSplit" class="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the counts list" tabindex="0"></div>
+      <div id="countsPanel" class="counts">
+        <div class="counts-head">Counts</div>
+        <div class="counts-scope" role="radiogroup" aria-label="Which sheets to count">
+          <label><input type="radio" name="countScope" value="sheet" checked> This sheet</label>
+          <label><input type="radio" name="countScope" value="all"> All sheets</label>
+        </div>
+        <ul id="countsList"></ul>
+        <p id="countsEmpty" class="hint">No symbols yet.</p>
+      </div>
       <div id="selectionBox" class="mark-card" hidden>
         <div class="mark-card-title">Selected mark</div>
         <label class="field" id="noteField" hidden>Note
@@ -205,10 +210,10 @@
         <label class="field" id="circuitField" hidden>Circuit
           <input id="circuitInput" type="text" maxlength="24" aria-label="Circuit" placeholder="Blank">
         </label>
-        <label class="field" id="heightField" hidden title="Prints under this outlet. A plain number is inches, so 48 becomes 48&quot;.">Height
-          <input id="heightInput" type="text" maxlength="12" aria-label="Outlet height" placeholder="48">
+        <label class="field" id="heightField" hidden title="Optional on any symbol. A plain number is inches, so 48 becomes 48&quot;. It prints beside the symbol. The next mark starts blank.">Height
+          <input id="heightInput" type="text" maxlength="12" aria-label="Symbol height" placeholder="48">
         </label>
-        <label class="field" id="ampsField" hidden title="Prints under this equipment. A plain number is amps, so 30 becomes 30A. Type the whole rating if it is more than a number, such as 40A 240V.">Amps
+        <label class="field" id="ampsField" hidden title="Optional on a countertop receptacle, a television, or an appliance. A plain number is amps, so 30 becomes 30A. The next mark starts blank.">Amps
           <input id="ampsInput" type="text" maxlength="16" aria-label="Ampacity" placeholder="30">
         </label>
         <label class="field" id="symbolField">Symbol
@@ -291,28 +296,28 @@
     <ul>
       <li>Click a symbol, then click the sheet to place it. Click the symbol again to put the tool away.</li>
       <li>Drag a mark to move it. Drag the amber handle to rotate the whole symbol. Hold Shift to snap to 15°.</li>
-      <li>A symbol is clicked in its center, about 65% of the box. The drawing and the amber handle stay full size. Click the same spot again to select the next symbol when those centers still overlap.</li>
+      <li>A symbol is clicked in its center, about 65% of the box. The drawing and the amber handle stay full size. Click the same spot again to select the next symbol when those centers still overlap. When a symbol is armed, a click places a new one even if it lands on a mark. Hold Alt to select or move that mark instead. With nothing armed, click the mark to select it. Alt-drag still duplicates.</li>
       <li>Letters turn with the symbol. Home, Sheets, Layers, View, and Export are on the ribbon. Drag the edge of the symbol list to resize it.</li>
       <li>Click a category name to show or hide its symbols.</li>
       <li>Note places a short label on the sheet. Click where it should sit, then type it. Drag it off to the side. A note is text, so it is left out of the symbol legend and the counts.</li>
       <li>Arrow points at the work. Click the first point, then click where the arrow points. Esc cancels that arrow.</li>
-      <li>Dashed line connects lights. Click the first point, then the next. An end snapped to a symbol stays there when the symbol moves. A blue end is attached. Drag that end away, or drag the line, to disconnect it. Esc cancels the segment.</li>
+      <li>Dashed line connects lights. Click the first point, then each bend. Each click continues from the last point. Enter, Esc, or double-click finishes the chain and leaves the tool armed. An end snapped to a symbol stays there when the symbol moves. A blue end is attached. Drag that end away, or drag the line, to disconnect it. Esc cancels the chain, and a second Esc puts the tool away.</li>
       <li>Where a dashed line or a run crosses another, the one drawn later hops over it with a small jump. The hop moves when you move either line.</li>
-      <li>Shift-click two to five nearby switches, then Group switches. They pack tightly, about 0.6 of a symbol apart, and each switch still takes its own dashed line. Dragging one moves the whole box. Ungroup separates them.</li>
+      <li>Shift-click two to five nearby switches, then Group switches. They pack on the wall of the first switch, about 0.6 of a symbol apart, so a corner does not leave them on two walls. Each switch still takes its own dashed line. Dragging one moves the whole box. Ungroup separates them.</li>
       <li>Light layout draws a construction rectangle. Click one corner, then the opposite corner. Hold Shift for a square. No symbols are placed. Click a symbol, then click the line to put it on the rectangle.</li>
       <li>White box covers the plan with an opaque white rectangle. Click one corner, then the opposite corner. Hold Shift for a square. Drag the rectangle to move it, or drag an amber corner to resize it. Export paints these first, so they cover the original sheet and the symbols stay on top. Export final erases the text and scanned image under each box, so it cannot be copied or uncovered. Export all layers paints the box in its layer instead, so turning that layer off shows the plan again. The original PDF is not changed.</li>
-      <li>Snap to plan lines pulls a light onto a strong line in the sheet, centered on that line. An outlet or a switch sits on the open side of that line, against the wall. The outlet lines run out from the wall. A switch turns to follow the wall. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without snapping.</li>
-      <li>Layers are Power, Lighting, Low-volt, Circuitry, or a name you type. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new symbols, dashed lines, and other marks go on that layer. Export all layers writes each layer as a group in the PDF. A white box in that export stays with its layer.</li>
+      <li>Snap to plan lines pulls a light onto a strong line in the sheet, centered on that line. An outlet or a switch sits on the open side of that line, against the wall. The outlet lines run out from the wall. A switch turns to follow the wall. Letters on a switch, a detector, or equipment stay right-side up, between −90° and 90°, on the sheet and in the export. Floor plugs, ceiling lights, and any mark set to Free place ignore it. Hold Shift to place or drag one symbol without snapping.</li>
+      <li>Layers are Power, Lighting, Low-volt, Circuitry, or a name you type. Uncheck a layer to hide it on the sheet, in the counts, and in the legend. When only one layer is checked, new symbols, dashed lines, and other marks go on that layer. A note uses the layer selected when you place it. Smoke detectors and smoke/CO detectors go on Lighting. Export all layers writes each layer as a group in the PDF. A white box in that export stays with its layer.</li>
       <li>Circuit is an optional label. Circuits on the View tab shows it next to the symbol. Add schedule sheet lists each circuit, its description, the count, and notes. A dashed line or run takes the circuit of a symbol it snaps to when it does not already have one.</li>
       <li>Under cabinet 120V and LED tape light are runs. Click one end, then the other. The words sit under the line. Esc cancels that run.</li>
-      <li>The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as a range hood, disposal, water heater, furnace, pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.</li>
+      <li>The symbol list also has step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as a range hood, disposal, water heater, furnace, pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, a gate, a wall oven, cooktop, dishwasher, microwave, refrigerator, washer, dryer, television, heat detector, and a disconnect. List shows one symbol per row. The choice is remembered on this computer.</li>
       <li>Most used stays at the top of the list. It shows the six symbols placed most often on this plan. A symbol you only try once stays down in its own category.</li>
-      <li>Select an outlet and type a height, such as 48 or 18. A plain number is inches. It prints under the outlet. Counts and the legend list each height on its own. Clear the field to leave the height off. The next outlet you place keeps that height until you change it.</li>
-      <li>Select equipment, such as a furnace, a well, a sump, or an air conditioner, and type an ampacity, such as 30 or 40A 240V. A plain number is amps. It prints under the symbol, the same way a 30A outlet shows its rating. Counts and the legend list each rating on its own. Clear the field to leave it off. The next equipment you place keeps that rating until you change it.</li>
+      <li>Select a symbol and type a height, such as 48 or 18. A plain number is inches. It prints beside the symbol in regular type, smaller than the lettering, so it stays off a run label. Counts and the legend list each height on its own. Clear the field to leave the height off. Every new mark starts blank.</li>
+      <li>Select a countertop receptacle, a television, or an appliance such as a furnace, a well, a sump, or an air conditioner, and type an ampacity, such as 30 or 40A 240V. A plain number is amps. It prints beside the symbol, the same way a 30A outlet shows its rating. Counts and the legend list each rating on its own. Clear the field to leave it off. A new mark starts blank.</li>
       <li>Apply size to all copies the selected symbol’s size onto the other marks of that type. This sheet only is the usual choice. All sheets covers the whole plan.</li>
-      <li>Counts lists each symbol that is on the plan. Add counts sheet puts that list on a new page.</li>
-      <li>Drop legend places a key of the symbols placed on the plan. Drag it where the crew can read it. The key follows those symbols as you add or delete them. A hidden layer stays off it.</li>
-      <li>Legend on the Sheets tab adds a sheet of those same symbols, with the name and a short description. The sheet stays as it was when you added it.</li>
+      <li>Counts lists each symbol that is on the plan. The list sits under the symbols, and the divider above it shows the full list. Add counts sheet puts that list on a new page.</li>
+      <li>Drop legend places a key in the largest empty area. This sheet only is checked by default, so the key lists symbols on that sheet. Uncheck it to list every sheet. Several symbols wrap into columns. Drag the key if you want it somewhere else. The key follows those symbols as you add or delete them. A hidden layer stays off it. The descriptions say what the symbol is, such as Duplex receptacle or GFCI receptacle 20A.</li>
+      <li>Legend on the Sheets tab adds a sheet of those same symbols, with the name and a short description. Refresh sheets rebuilds the legend, the counts, and the schedule from the marks. Delete sheet removes an added sheet. A plan page stays.</li>
       <li>Calibrate on a known dimension (the sample has a 10 ft line) so size can be read in feet.</li>
       <li>Export to revise writes a marked PDF you can open again and keep editing. Export final draws the marks into a PDF to send out. Opening the final file does not bring the marks back for editing. A recovery copy is written just before either export.</li>
       <li>Marks are saved in this browser, and about every 75 seconds as a JSON file in the planmarks-recovery folder next to the program (or the project folder when you run from source). Closing the tab writes that file too. Opening the same plan offers to restore a newer recovery. Load can open that JSON as well. Sheets you add are kept in that folder too, and opening the original PDF asks whether to bring them back. Files in that folder that sit unused for 90 days are removed when the program starts.</li>

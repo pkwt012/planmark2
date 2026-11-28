@@ -187,8 +187,8 @@ function syncInspector() {
   if (state.calibStep === 1) say("Click the first end of a known length.");
   else if (state.calibStep === 2) say("Click the other end.");
   else if (state.calibStep === 3) say("Enter how long that distance is, then Apply.");
-  else if (state.tool === "line" && state.lineDraft) say("Click the next point. A point on a symbol stays attached. Esc cancels this segment.");
-  else if (state.tool === "line") say("Click the first point of a dashed line. Snap it to a symbol to keep that end attached. Esc puts the tool away.");
+  else if (state.tool === "line" && state.lineDraft) say("Click the next point. Each click continues the line. Enter, Esc, or double-click finishes. A point on a symbol stays attached.");
+  else if (state.tool === "line") say("Click the first point of a dashed line, then each bend. Enter, Esc, or double-click finishes. Snap an end to a symbol to keep it attached.");
   else if (state.tool === "layout" && state.layoutDraft) say("Click the opposite corner. Hold Shift for a square. Esc cancels this rectangle.");
   else if (state.tool === "layout") say("Click one corner, then the opposite corner. This draws a construction line. Symbols snap onto it. Esc puts the tool away.");
   else if (state.tool === "whitebox" && state.whiteboxDraft) say("Click the opposite corner. Hold Shift for a square. Esc cancels this white box.");
@@ -207,7 +207,7 @@ function syncInspector() {
   else if (p && p.kind === "arrow") say("Drag the arrow to move it. Drag an amber end to change it.");
   else if (p && p.kind === "run") say("Drag the run to move it. Drag an amber end to change its length.");
   else if (p && p.kind === "note") say("Edit the label here. Drag it on the sheet. Notes are not listed in the legend or the counts.");
-  else if (p && p.kind === "legend") say("Drag the legend. The slider changes how wide it is.");
+  else if (p && p.kind === "legend") say(p.sheetOnly ? "Drag the legend. It lists symbols on this sheet. The slider changes how wide it is." : "Drag the legend. It lists symbols on every sheet. The slider changes how wide it is.");
   else if (p && p.kind === "whitebox") say("Drag the white box to move it. Drag an amber corner to resize it. Shift keeps a corner square.");
   else if (p && p.groupId && groupMembers(p.groupId).length >= 2) say("This switch is in a multi-gang box. Drag moves the whole box. Each switch still takes its own dashed line. Ungroup separates them.");
   else if (pickedSwitches().length >= 2) say("Group switches packs these into one box. Each switch still takes its own dashed line.");
@@ -328,7 +328,7 @@ function syncInspector() {
   $("colors").hidden = Boolean(p && (p.kind === "legend" || p.kind === "whitebox"));
   if (symbolLike) {
     $("symbolSelect").value = p.symbolId;
-    if (document.activeElement !== $("rotInput")) $("rotInput").value = String(Math.round(p.rotation || 0));
+    if (document.activeElement !== $("rotInput")) $("rotInput").value = String(Math.round(shownRotation(p.symbolId, p.rotation)));
   }
   for (const btn of $("colors").querySelectorAll(".swatch-btn")) {
     const match = p && p.kind !== "legend" ? btn.dataset.value === (p.color || "") : btn.dataset.value === state.ink;
@@ -340,7 +340,10 @@ function syncInspector() {
   const grouped = Boolean(p && p.groupId && groupMembers(p.groupId).length >= 2);
   $("ungroupBtn").hidden = !grouped;
   $("groupRow").hidden = $("groupBtn").hidden && $("ungroupBtn").hidden;
+  const legendOnly = $("legendSheetOnly");
+  if (legendOnly && p && p.kind === "legend") legendOnly.checked = p.sheetOnly === true;
   viewport.classList.toggle("placing", Boolean(state.armedId || state.tool) && !state.calibStep);
+  syncSheetCommands();
 }
 
 function syncLayerField(p) {
@@ -453,14 +456,17 @@ function countScope() {
 }
 
 function countRows() {
-  const scope = countScope();
+  return countRowsFor(countScope(), state.pageIndex);
+}
+
+function countRowsFor(scope, pageIndex) {
   const tally = new Map();
   for (const item of state.placements) {
     if (!layerVisible(item)) continue;
     if (item.kind === "note" || item.kind === "arrow" || item.kind === "line" || item.kind === "legend" || item.kind === "whitebox") continue;
     if (!isSymbol(item) && item.kind !== "run") continue;
     if (!item.symbolId) continue;
-    if (scope === "sheet" && item.page !== state.pageIndex) continue;
+    if (scope === "sheet" && item.page !== pageIndex) continue;
     const key = markCountKey(item);
     tally.set(key, (tally.get(key) || 0) + 1);
   }
@@ -555,6 +561,9 @@ async function addScheduleSheet() {
     if (!res.ok) throw new Error(await readError(res));
     const info = await res.json();
     state.doc = info;
+    rememberSheets(info, "schedule", { scope, sourcePage: state.pageIndex });
+    state.sheetRevision = (state.sheetRevision || 0) + 1;
+    state.imageKey = "";
     const start = Math.max(0, info.pageCount - (info.added || 1));
     showPage(start, { fit: true });
     scheduleSave();
@@ -589,6 +598,9 @@ async function addCountsSheet() {
     if (!res.ok) throw new Error(await readError(res));
     const info = await res.json();
     state.doc = info;
+    rememberSheets(info, "counts", { scope, sourcePage: state.pageIndex });
+    state.sheetRevision = (state.sheetRevision || 0) + 1;
+    state.imageKey = "";
     const start = Math.max(0, info.pageCount - (info.added || 1));
     showPage(start, { fit: true });
     scheduleSave();
@@ -662,7 +674,7 @@ function bumpRotation(delta) {
   const p = selected();
   if (!isSymbol(p)) return;
   pushUndo();
-  p.rotation = normRot(p.rotation + delta);
+  p.rotation = storeRotation(p.symbolId, (Number(p.rotation) || 0) + delta);
   updateMark(p);
   scheduleSave();
 }
