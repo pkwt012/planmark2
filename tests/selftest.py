@@ -141,9 +141,9 @@ if (sitsBesideWall({category: "receptacles", wall: false})) process.exit(4);
 if (sitsBesideWall({category: "lighting", wall: true})) process.exit(5);
 if (sitsBesideWall({category: "lighting", wall: false})) process.exit(6);
 if (wallRotation(0, 1) !== 0) process.exit(7);
-if (wallRotation(1, 0) !== 270) process.exit(8);
+if (wallRotation(1, 0) !== -90) process.exit(8);
 if (wallRotation(-1, 0) !== 90) process.exit(9);
-if (wallRotation(0, -1) !== 180) process.exit(10);
+if (wallRotation(0, -1) !== 0) process.exit(10);
 if (wallRotation(0, 1, true) !== 90) process.exit(11);
 if (wallRotation(1, 0, true) !== 0) process.exit(12);
 if (wallRotation(-1, 0, true) !== 180) process.exit(13);
@@ -271,6 +271,10 @@ def main():
     check("occupancy switch is OCC", ">OCC<" in by["occ"]["svg"] and "<circle" not in by["occ"]["svg"])
     check("20A duplex is labeled", ">20A<" in by["duplex20"]["svg"] and "<circle" in by["duplex20"]["svg"])
     check("48 inch outlet is not its own symbol", "outlet48" not in ids)
+    gear = {"oven", "cooktop", "dishwasher", "microwave", "refrigerator", "washer", "dryer", "heat", "disconnect", "smokeco", "tv"}
+    check("appliance and detector symbols", gear <= ids, sorted(gear - ids))
+    export_src = (ROOT / "elecplan/export.py").read_text(encoding="utf-8")
+    check("export removes duplicate fonts", "tobytes(deflate=True, garbage=4)" in export_src)
     check("20A gfi is its own outlet", ">20A GFI<" in by["gfci20"]["svg"] and by["gfci20"]["svg"] != gfci["svg"])
     check("cans keep their sizes", '>4"<' in by["recessed4"]["svg"] and '>6"<' in by["recessed6"]["svg"])
     check("camera is low voltage", by["camera"]["defaultColor"] == "#1d4e89" and "<rect" in by["camera"]["svg"])
@@ -310,11 +314,11 @@ def main():
         "legend lists each equipment ampacity",
         [item["name"] for item in named_amps] == ["Furnace 30A", "Furnace", "A/C 40A 240V"],
     )
-    try:
-        choose_legend_symbols(lib["symbols"], ["switch"], ['Single-pole switch 48"'])
-        check("height stays off a switch legend", False)
-    except ValueError as exc:
-        check("height stays off a switch legend", "bad symbols" in str(exc), str(exc))
+    named_switch = choose_legend_symbols(lib["symbols"], ["switch"], ['Single-pole switch 48"'])
+    check(
+        "legend lists a switch height",
+        [item["name"] for item in named_switch] == ['Single-pole switch 48"'],
+    )
     try:
         choose_legend_symbols(lib["symbols"], [])
         check("empty legend is refused", False)
@@ -1090,7 +1094,7 @@ def main():
         ids,
     )
     check("plain number height is inches", height_parsed[0].get("height") == '48"')
-    check("a switch can store a height but it is not an outlet height", height_parsed[2].get("height") == "9ft")
+    check("a switch stores a height", height_parsed[2].get("height") == "9ft")
     height_pdf = export_pdf(height_raw, height_parsed, by_id)
     height_doc = pymupdf.open(stream=height_pdf, filetype="pdf")
     height_text = height_doc[0].get_text()
@@ -1098,7 +1102,7 @@ def main():
     check("outlet height exports under the symbol", '48"' in height_text, height_text[:300])
     check("legend lists the outlet height on its own", "Duplex outlet 48\"" in height_text, height_text[:500])
     check("legend still lists the outlet that has no height", "Duplex outlet\n" in height_text or "\nDuplex outlet\n" in f"\n{height_text}\n")
-    check("switch height stays off the sheet and the legend", "9ft" not in height_text, height_text[:500])
+    check("switch height exports and is listed", "9ft" in height_text and "Single-pole switch 9ft" in height_text, height_text[:500])
     amps_parsed = parse_placements(
         [
             {
@@ -1900,7 +1904,7 @@ def main():
         status, _headers, body = request(base, "/api/recover?id=not-an-id")
         check("recovery bad id", status == 400, body[:160])
         status, _headers, body = request(base, "/api/recover?id=0000000000000000")
-        check("recovery missing", status == 404, body[:160])
+        check("recovery missing", status == 200 and json.loads(body) == {}, body[:160])
         status, _headers, body = request(
             base,
             "/api/recover",

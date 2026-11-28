@@ -115,6 +115,7 @@ def load_symbols(folder: Path | None = None) -> dict:
             "runLabel": run_label,
             "keywords": entry.get("keywords") or "",
             "hint": entry.get("hint") or "",
+            "legend": entry.get("legend") or entry.get("hint") or "",
             "defaultColor": color.lower(),
             "svg": svg,
         }

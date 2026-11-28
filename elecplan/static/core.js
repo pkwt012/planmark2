@@ -50,6 +50,11 @@ const state = {
   showCircuits: false,
   outletHeight: "",
   equipmentAmps: "",
+  activeLayer: "Power",
+  paletteList: false,
+  basePageCount: 0,
+  generatedSheets: [],
+  sheetRevision: 0,
   exportAllLayers: false,
   hiddenLayers: new Set(),
   undo: [],
@@ -251,11 +256,11 @@ async function loadPageImage() {
   if (!state.doc) return;
   const pageIndex = state.pageIndex;
   const dpi = chooseDpi();
-  const key = `${state.doc.id}:${pageIndex}:${dpi}`;
+  const key = `${state.doc.id}:${pageIndex}:${dpi}:${state.sheetRevision || 0}`;
   if (key === state.imageKey) return;
   const token = ++state.imageToken;
   try {
-    const res = await fetch(`/api/page/${pageIndex}.png?dpi=${dpi}&doc=${state.doc.id}`);
+    const res = await fetch(`/api/page/${pageIndex}.png?dpi=${dpi}&doc=${state.doc.id}&rev=${state.sheetRevision || 0}`);
     if (!res.ok) throw new Error(await readError(res));
     const blob = await res.blob();
     if (token !== state.imageToken) return;
@@ -306,6 +311,7 @@ function updatePager() {
   $("layoutBtn").disabled = false;
   $("whiteboxBtn").disabled = false;
   $("dropLegendBtn").disabled = false;
+  if (typeof syncSheetCommands === "function") syncSheetCommands();
 }
 
 function showPage(index, { fit = false } = {}) {
