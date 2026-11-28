@@ -21,14 +21,6 @@ function placeAt(cx, cy, shift) {
     color: state.ink || sym.defaultColor || "#141414",
     layer: placeLayer("symbol", sym.id),
   };
-  if (takesHeight(sym.id)) {
-    const height = cleanHeight(state.outletHeight, true);
-    if (height) mark.height = height;
-  }
-  if (takesAmps(sym.id)) {
-    const amps = cleanAmps(state.equipmentAmps, true);
-    if (amps) mark.amps = amps;
-  }
   state.placements.push(mark);
   state.selectedId = mark.id;
   renderMarks();
@@ -197,11 +189,15 @@ function wallSidePoint(hit, gap) {
 }
 
 function wallRotation(nx, ny, outlets) {
-  // The label side points into the room, so a switch stays upright on a horizontal wall.
-  // Outlet slots are drawn across the symbol. One more quarter turn stands them out from the wall.
+  // The label side points into the room. Outlet slots get one more quarter turn so they run out from the wall.
+  // Switch letters stay between -90 and 90 degrees, so a wall above the room does not turn the text over.
   const deg = (Math.atan2(-nx, ny) * 180) / Math.PI;
   const turned = normRot(Math.round(deg / 15) * 15);
-  return outlets ? normRot(turned + 90) : turned;
+  if (outlets) return normRot(turned + 90);
+  let d = turned;
+  if (d > 90 && d < 270) d = normRot(d + 180);
+  if (d > 180) d -= 360;
+  return d;
 }
 
 function snapPlacement(pt, symbolId, freePlace, shift, size) {
@@ -540,7 +536,21 @@ function segmentClick(pt, kind) {
   }
   state.placements.push(mark);
   state.selectedId = mark.id;
-  state[key] = null;
+  if (kind === "line") {
+    state.lineDraft = {
+      kind: "line",
+      page: draft.page,
+      x1: mark.x2,
+      y1: mark.y2,
+      x2: mark.x2,
+      y2: mark.y2,
+      color: draft.color,
+      a1: mark.a2 || null,
+      anchorStart: mark.a2 || null,
+    };
+  } else {
+    state[key] = null;
+  }
   renderMarks();
   syncInspector();
   scheduleSave();
@@ -612,6 +622,7 @@ function placeLegend(pt) {
   const y = clamp(pt.y, 8, Math.max(8, page.height - height - 8));
   pushUndo();
   const mark = { id: uid(), kind: "legend", page: state.pageIndex, x, y, width, layer: placeLayer("legend") };
+  if (legendSheetOnly(null)) mark.sheetOnly = true;
   state.placements.push(mark);
   state.selectedId = mark.id;
   state.tool = null;
@@ -620,6 +631,102 @@ function placeLegend(pt) {
   scheduleSave();
   setStatus();
   toast("Legend placed. Drag it where the crew can read it.");
+}
+
+function legendSpot(page, boxW, boxH) {
+  const margin = 10;
+  const maxX = Math.max(margin, page.width - boxW - margin);
+  const maxY = Math.max(margin, page.height - boxH - margin);
+  const cols = 32;
+  const rows = 24;
+  const cellW = page.width / cols;
+  const cellH = page.height / rows;
+  const blocked = new Uint8Array(cols * rows);
+  const map = ensureEdgeMap();
+  if (map) {
+    const sx = map.w / page.width;
+    const sy = map.h / page.height;
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const px = Math.min(map.w - 1, Math.floor((c + 0.5) * cellW * sx));
+        const py = Math.min(map.h - 1, Math.floor((r + 0.5) * cellH * sy));
+        const i = (py * map.w + px) * 4;
+        const lum = map.data[i] * 0.299 + map.data[i + 1] * 0.587 + map.data[i + 2] * 0.114;
+        if (lum < 210) blocked[r * cols + c] = 1;
+      }
+    }
+  }
+  const blockRect = (left, top, right, bottom) => {
+    const c0 = clamp(Math.floor(left / cellW), 0, cols - 1);
+    const c1 = clamp(Math.floor(right / cellW), 0, cols - 1);
+    const r0 = clamp(Math.floor(top / cellH), 0, rows - 1);
+    const r1 = clamp(Math.floor(bottom / cellH), 0, rows - 1);
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) blocked[r * cols + c] = 1;
+    }
+  };
+  for (const item of state.placements) {
+    if (item.page !== state.pageIndex || !layerVisible(item)) continue;
+    if (isSegment(item) || isWhitebox(item)) {
+      blockRect(
+        Math.min(item.x1, item.x2) - 6,
+        Math.min(item.y1, item.y2) - 6,
+        Math.max(item.x1, item.x2) + 6,
+        Math.max(item.y1, item.y2) + 6,
+      );
+    } else if (item.kind === "legend") {
+      const box = legendBox(item.width, item);
+      blockRect(item.x, item.y, item.x + box.width, item.y + box.height);
+    } else if (item.kind === "note") {
+      blockRect(item.x - 8, item.y - 8, item.x + 90, item.y + (item.size || 12) + 8);
+    } else {
+      const s = (item.size || 28) * 0.7;
+      blockRect(item.x - s, item.y - s, item.x + s, item.y + s);
+    }
+  }
+  const needC = Math.max(1, Math.min(cols, Math.ceil(boxW / cellW)));
+  const needR = Math.max(1, Math.min(rows, Math.ceil(boxH / cellH)));
+  let best = null;
+  for (let r = 0; r + needR <= rows; r += 1) {
+    for (let c = 0; c + needC <= cols; c += 1) {
+      let free = 0;
+      for (let rr = 0; rr < needR; rr += 1) {
+        const row = (r + rr) * cols;
+        for (let cc = 0; cc < needC; cc += 1) if (!blocked[row + c + cc]) free += 1;
+      }
+      const away = (c + needC / 2 - cols / 2) ** 2 + (r + needR / 2 - rows / 2) ** 2;
+      if (!best || free > best.free || (free === best.free && away > best.away)) best = { c, r, free, away };
+    }
+  }
+  if (!best) return { x: maxX, y: margin };
+  return {
+    x: clamp(best.c * cellW, margin, maxX),
+    y: clamp(best.r * cellH, margin, maxY),
+  };
+}
+
+function placeLegendAuto() {
+  if (!state.doc) return;
+  const page = currentPage();
+  const lay = visibleLegendLayout(null);
+  if (!page || !lay || !lay.items.length) {
+    toast("Place a symbol before adding a legend.");
+    return;
+  }
+  let width = lay.width;
+  let height = lay.height;
+  const maxW = Math.max(120, page.width - 24);
+  const maxH = Math.max(80, page.height - 24);
+  if (width > maxW) {
+    height *= maxW / width;
+    width = maxW;
+  }
+  if (height > maxH) {
+    width *= maxH / height;
+    height = maxH;
+  }
+  const spot = legendSpot(page, width, height);
+  placeLegend(spot);
 }
 
 function groupMembers(groupId) {
@@ -652,20 +759,12 @@ function pickedSwitches() {
 }
 
 function groupAxis(items) {
-  let best = 0;
-  let axis = { x: 1, y: 0 };
-  for (let i = 0; i < items.length; i += 1) {
-    for (let j = i + 1; j < items.length; j += 1) {
-      const dx = items[j].x - items[i].x;
-      const dy = items[j].y - items[i].y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > best) {
-        best = dist;
-        axis = dist < 0.01 ? { x: 1, y: 0 } : { x: dx / dist, y: dy / dist };
-      }
-    }
-  }
-  return axis;
+  const primary = items[0];
+  const rad = ((Number(primary.rotation) || 0) * Math.PI) / 180;
+  const x = Math.cos(rad);
+  const y = Math.sin(rad);
+  const len = Math.hypot(x, y) || 1;
+  return { x: x / len, y: y / len };
 }
 
 function sortedOnAxis(items, axis) {
@@ -676,12 +775,23 @@ function switchesAreAdjacent(items) {
   if (items.length < 2 || items.length > 5) return false;
   const page = items[0].page;
   if (items.some((item) => item.page !== page)) return false;
-  const sorted = sortedOnAxis(items, groupAxis(items));
-  const minSize = Math.min(...sorted.map((item) => item.size || 28));
-  for (let i = 1; i < sorted.length; i += 1) {
-    const gap = Math.hypot(sorted[i].x - sorted[i - 1].x, sorted[i].y - sorted[i - 1].y);
-    if (gap > minSize * 2.4) return false;
+  const axis = groupAxis(items);
+  const px = -axis.y;
+  const py = axis.x;
+  const origin = items[0];
+  let minAlong = Infinity;
+  let maxAlong = -Infinity;
+  let spread = 0;
+  for (const item of items) {
+    const along = (item.x - origin.x) * axis.x + (item.y - origin.y) * axis.y;
+    const perp = (item.x - origin.x) * px + (item.y - origin.y) * py;
+    minAlong = Math.min(minAlong, along);
+    maxAlong = Math.max(maxAlong, along);
+    spread = Math.max(spread, Math.abs(perp));
   }
+  const minSize = Math.min(...items.map((item) => item.size || 28));
+  if (spread > minSize * 3) return false;
+  if (maxAlong - minAlong > minSize * 2.4 * (items.length - 1)) return false;
   return true;
 }
 
@@ -761,17 +871,19 @@ function groupSwitches() {
     return;
   }
   pushUndo();
+  const primary = items[0];
   const axis = groupAxis(items);
   const sorted = sortedOnAxis(items, axis);
   const pitch = (sorted.reduce((sum, item) => sum + item.size, 0) / sorted.length) * GANG_PITCH;
-  const cx = sorted.reduce((sum, item) => sum + item.x, 0) / sorted.length;
-  const cy = sorted.reduce((sum, item) => sum + item.y, 0) / sorted.length;
   const mid = (sorted.length - 1) / 2;
+  const meanAlong = sorted.reduce((sum, item) => sum + item.x * axis.x + item.y * axis.y, 0) / sorted.length;
+  const baseAlong = primary.x * axis.x + primary.y * axis.y;
   const groupId = uid();
   sorted.forEach((item, index) => {
-    const along = (index - mid) * pitch;
-    item.x = cx + axis.x * along;
-    item.y = cy + axis.y * along;
+    const delta = meanAlong + (index - mid) * pitch - baseAlong;
+    item.x = primary.x + axis.x * delta;
+    item.y = primary.y + axis.y * delta;
+    item.rotation = primary.rotation;
     item.groupId = groupId;
     item.gang = index;
     followAnchors(item);
@@ -828,21 +940,22 @@ function moveWithGroup(drag, dx, dy, shift) {
   paintGangBoxes();
 }
 
-function startMove(e, id, startPdf) {
+function startMove(e, id, startPdf, options) {
   let p = placement(id);
   if (!p) return;
   const previousId = state.selectedId;
   state.selectedId = id;
   let undoOnMove = true;
-  if (e.altKey) {
+  const duplicate = Boolean(e.altKey && !(options && options.keep));
+  if (duplicate) {
     pushUndo();
     p = duplicatePlacement(p, 0, 0);
     state.selectedId = p.id;
     undoOnMove = false;
   }
   const pdf = startPdf || clientToPdf(e.clientX, e.clientY);
-  const mates = !e.altKey && p.groupId && isSwitchSymbol(p) ? groupMembers(p.groupId) : [p];
-  const stack = isSymbol(p) && !e.altKey && !e.shiftKey ? symbolsAt(pdf.x, pdf.y) : [];
+  const mates = !duplicate && p.groupId && isSwitchSymbol(p) ? groupMembers(p.groupId) : [p];
+  const stack = isSymbol(p) && !duplicate && !e.shiftKey ? symbolsAt(pdf.x, pdf.y) : [];
   state.picked = new Set();
   state.drag = {
     type: "move",
@@ -854,7 +967,7 @@ function startMove(e, id, startPdf) {
     origin: placementOrigin(p),
     origins: mates.map((item) => ({ id: item.id, ...placementOrigin(item) })),
     moved: false,
-    alt: e.altKey,
+    alt: duplicate,
     undo: undoOnMove,
   };
   capturePointer(e);
@@ -907,11 +1020,27 @@ function onPointerDown(e) {
   }
   if (e.button !== 0) return;
   const pt = clientToPdf(e.clientX, e.clientY);
+  const armedPoint = Boolean(state.armedId && !state.tool && symbolsById[state.armedId] && symbolsById[state.armedId].place !== "run");
+  if (state.tool === "line" && e.detail >= 2) {
+    e.preventDefault();
+    state.lineDraft = null;
+    const note = $("toast");
+    if (note && note.textContent.indexOf("That line is too short") === 0) note.hidden = true;
+    renderWires();
+    syncInspector();
+    setStatus();
+    return;
+  }
   if (state.tool === "line" || state.tool === "arrow" || state.tool === "run" || state.tool === "layout" || state.tool === "whitebox") {
     e.preventDefault();
     if (state.tool === "layout") layoutClick(pt, e.shiftKey);
     else if (state.tool === "whitebox") whiteboxClick(pt, e.shiftKey);
     else segmentClick(pt, state.tool);
+    return;
+  }
+  if (armedPoint && !e.altKey && !state.calibStep) {
+    e.preventDefault();
+    placeAt(e.clientX, e.clientY, e.shiftKey);
     return;
   }
   const boxHandle = e.target.closest(".box-handle");
@@ -929,7 +1058,7 @@ function onPointerDown(e) {
   const wire = e.target.closest(".wire");
   if (wire && wire.dataset.id) {
     e.preventDefault();
-    startMove(e, wire.dataset.id);
+    startMove(e, wire.dataset.id, null, armedPoint && e.altKey ? { keep: true } : null);
     return;
   }
   const handle = e.target.closest(".handle");
@@ -948,7 +1077,7 @@ function onPointerDown(e) {
       capturePointer(e);
       return;
     }
-    startMove(e, mark.dataset.id);
+    startMove(e, mark.dataset.id, null, armedPoint && e.altKey ? { keep: true } : null);
     return;
   }
   if (state.calibStep === 1 || state.calibStep === 2) {
@@ -1192,8 +1321,8 @@ function setStatus() {
     if (state.calibStep === 1) left = "Calibrate: click the first point of a known length";
     else if (state.calibStep === 2) left = "Calibrate: click the second point";
     else if (state.calibStep === 3) left = "Enter that length, then Apply";
-    else if (state.tool === "line" && state.lineDraft) left = "Dashed line: click the next point. Esc cancels this segment.";
-    else if (state.tool === "line") left = "Dashed line: click the first point. Snap to a symbol to stay attached.";
+    else if (state.tool === "line" && state.lineDraft) left = "Dashed line: click the next point. Enter, Esc, or double-click finishes.";
+    else if (state.tool === "line") left = "Dashed line: click the first point, then each bend. Enter, Esc, or double-click finishes.";
     else if (state.tool === "layout" && state.layoutDraft) left = "Light layout: click the opposite corner. Shift makes a square.";
     else if (state.tool === "layout") left = "Light layout: click two corners to draw a construction rectangle.";
     else if (state.tool === "whitebox" && state.whiteboxDraft) left = "White box: click the opposite corner. Shift makes a square.";

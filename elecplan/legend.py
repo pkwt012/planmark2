@@ -18,8 +18,39 @@ def _legend_id(raw) -> str:
     return sid
 
 
+def _legend_note(sym: dict, suffix: str):
+    """A height, an ampacity, or both, matching the text the editor sends."""
+    from elecplan.export import takes_amps, takes_height
+
+    suffix = suffix.strip()
+    if takes_height(sym) and takes_amps(sym) and " " in suffix:
+        height_raw, amps_raw = suffix.split(" ", 1)
+        try:
+            height = clean_height(height_raw)
+            amps = clean_amps(amps_raw)
+        except ValueError:
+            height = amps = None
+        if height and amps and suffix == f"{height} {amps}":
+            return f"{height} {amps}"
+    if takes_height(sym):
+        try:
+            height = clean_height(suffix)
+        except ValueError:
+            height = None
+        if height and suffix == height:
+            return height
+    if takes_amps(sym):
+        try:
+            amps = clean_amps(suffix)
+        except ValueError:
+            amps = None
+        if amps and suffix == amps:
+            return amps
+    return None
+
+
 def _named_legend_symbol(sym: dict, raw_name) -> dict:
-    """Keep the catalog name, or that name plus an outlet height or an equipment ampacity."""
+    """Keep the catalog name, or that name plus a height or an ampacity."""
     base = str(sym.get("name") or "")
     if raw_name is None or raw_name == base:
         return sym
@@ -28,16 +59,7 @@ def _named_legend_symbol(sym: dict, raw_name) -> dict:
     prefix = base + " "
     if not raw_name.startswith(prefix):
         raise ValueError("bad symbols")
-    category = sym.get("category")
-    try:
-        if category == "receptacles":
-            note = clean_height(raw_name[len(prefix):])
-        elif category == "equipment":
-            note = clean_amps(raw_name[len(prefix):])
-        else:
-            raise ValueError("bad symbols")
-    except ValueError as exc:
-        raise ValueError("bad symbols") from exc
+    note = _legend_note(sym, raw_name[len(prefix):])
     if not note or raw_name != f"{base} {note}":
         raise ValueError("bad symbols")
     return {**sym, "name": f"{base} {note}"}
@@ -147,7 +169,9 @@ def build_legend_pdf(symbols: list[dict], width: float, height: float) -> bytes:
                     fontname="helv",
                     color=(0.1, 0.1, 0.1),
                 )
-                hint = (sym.get("hint") or "").strip()
+                hint = (sym.get("legend") or sym.get("hint") or "").strip()
+                if hint and hint.lower() == str(sym.get("name") or "").strip().lower():
+                    hint = ""
                 if hint:
                     page.insert_text(
                         pymupdf.Point(text_x, cy + 12),
@@ -191,7 +215,13 @@ def legend_layout(symbols: list[dict]) -> dict:
     )
     col_w = sym_size + gap + name_w
     count = len(symbols)
-    cols = 3 if count >= 6 and (col_w * 3 + gutter * 2 + pad * 2) <= 680 else 2
+    cols = 1
+    if count >= 12 and (col_w * 4 + gutter * 3 + pad * 2) <= 920:
+        cols = 4
+    elif count >= 6 and (col_w * 3 + gutter * 2 + pad * 2) <= 760:
+        cols = 3
+    elif count >= 2:
+        cols = 2
     cols = max(1, min(cols, count))
     rows = math.ceil(count / cols)
     width = pad * 2 + cols * col_w + (cols - 1) * gutter

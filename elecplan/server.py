@@ -187,6 +187,98 @@ def load_recovery(pdf_id: str) -> dict | None:
     return data
 
 
+def _notice_pdf(width: float, height: float, title: str, message: str) -> bytes:
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=float(width), height=float(height))
+        page.insert_text(pymupdf.Point(36, 40), title, fontsize=16, fontname="helv", color=(0.08, 0.08, 0.08))
+        page.insert_text(pymupdf.Point(36, 64), message, fontsize=11, fontname="helv", color=(0.25, 0.25, 0.25))
+        return doc.tobytes()
+    finally:
+        doc.close()
+
+
+def _replace_page_range(doc: pymupdf.Document, start: int, count: int, raw: bytes) -> int:
+    """Insert raw in front of start, then drop the old pages. Returns the new page count."""
+    other = pymupdf.open(stream=raw, filetype="pdf")
+    try:
+        new_count = other.page_count
+        if new_count < 1:
+            raise ValueError("That sheet is empty")
+        doc.insert_pdf(other, start_at=start)
+    finally:
+        other.close()
+    if count > 0:
+        doc.delete_pages(from_page=start + new_count, to_page=start + new_count + count - 1)
+    return new_count
+
+
+def _keep_sheets(pdf_id: str, data: bytes) -> str:
+    try:
+        save_sheets(pdf_id, data)
+    except OSError as exc:
+        print(f"could not keep the added sheets: {exc}", file=sys.stderr)
+        return "The added sheets could not be saved for next time. Use Export to revise before you close."
+    except ValueError as exc:
+        return str(exc)
+    return ""
+
+
+def _shift_pages(placements, shifts: list[dict]):
+    if not isinstance(placements, list):
+        return []
+    for item in placements:
+        if not isinstance(item, dict):
+            continue
+        try:
+            page = int(item.get("page"))
+        except (TypeError, ValueError):
+            continue
+        for shift in shifts:
+            if page >= int(shift["at"]):
+                page += int(shift["delta"])
+        item["page"] = page
+    return placements
+
+
+def _sheet_specs(raw) -> list[dict]:
+    if not raw:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("sheets must be a list")
+    if len(raw) > 40:
+        raise ValueError("too many sheets")
+    specs = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("bad sheet")
+        kind = item.get("kind")
+        if kind not in ("legend", "counts", "schedule"):
+            continue
+        try:
+            start = int(item.get("start"))
+            count = int(item.get("count") or 1)
+            source = int(item.get("sourcePage") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("bad sheet range") from exc
+        if start < 0 or count < 1 or count > 40:
+            raise ValueError("bad sheet range")
+        scope = item.get("scope") if item.get("scope") in ("sheet", "all") else "all"
+        specs.append(
+            {
+                "kind": kind,
+                "start": start,
+                "count": count,
+                "scope": scope,
+                "sourcePage": max(0, source),
+                "symbolIds": item.get("symbolIds"),
+                "names": item.get("names"),
+                "rows": item.get("rows"),
+            }
+        )
+    return specs
+
+
 def _revision_project(raw) -> dict:
     if not isinstance(raw, dict) or raw.get("app") != "plan-marks" or raw.get("version") != 1:
         raise ValueError("A revision export needs the marks")
@@ -236,6 +328,17 @@ class Session:
             for index, page in enumerate(self.doc):
                 rect = page.rect
                 label = (page.get_label() or "").strip() or str(index + 1)
+                role = ""
+                try:
+                    snippet = page.get_text("text")[:500]
+                except Exception:
+                    snippet = ""
+                if "SYMBOL LEGEND" in snippet:
+                    role = "legend"
+                elif "SYMBOL COUNTS" in snippet:
+                    role = "counts"
+                elif "PANEL SCHEDULE" in snippet:
+                    role = "schedule"
                 pages.append(
                     {
                         "index": index,
@@ -243,6 +346,7 @@ class Session:
                         "height": rect.height,
                         "rotation": int(page.rotation),
                         "label": label,
+                        "role": role,
                     }
                 )
         return {
@@ -482,6 +586,90 @@ class Session:
                 self.cache.popitem(last=False)
             return data
 
+    def _spec_pdf(self, doc: pymupdf.Document, spec: dict, symbols: list) -> bytes:
+        """Bytes for one regenerated legend, counts, or schedule sheet."""
+        page_index = spec["sourcePage"]
+        if page_index < 0 or page_index >= doc.page_count:
+            page_index = 0
+        page = doc[page_index]
+        width = page.rect.width
+        height = page.rect.height
+        scope = spec["scope"]
+        if scope == "all":
+            subtitle = "All sheets"
+        else:
+            number = str(page_index + 1)
+            label = (page.get_label() or "").strip()
+            subtitle = label if label and label != number else f"Sheet {number}"
+        kind = spec["kind"]
+        if kind == "legend":
+            try:
+                chosen = choose_legend_symbols(symbols, spec.get("symbolIds"), spec.get("names"))
+            except ValueError:
+                return _notice_pdf(width, height, "SYMBOL LEGEND", "No symbols on the plan")
+            return build_legend_pdf(chosen, width, height)
+        if kind == "counts":
+            rows = parse_count_rows(spec.get("rows") or [])
+            return build_counts_pdf(rows, width, height, subtitle)
+        rows = spec.get("rows") or []
+        if rows:
+            rows = parse_schedule_rows(rows)
+        return build_schedule_pdf(rows, width, height, subtitle)
+
+    def _rewrite_sheets(self, doc: pymupdf.Document, specs: list[dict], symbols: list) -> tuple[list[dict], list[dict]]:
+        """Replace generated page ranges, last sheet first. Returns shifts and updated counts."""
+        shifts = []
+        updated = []
+        for spec in sorted(specs, key=lambda item: item["start"], reverse=True):
+            start = spec["start"]
+            count = spec["count"]
+            if start < 0 or start >= doc.page_count:
+                raise ValueError("That sheet is not in this plan")
+            count = min(count, doc.page_count - start)
+            raw = self._spec_pdf(doc, spec, symbols)
+            new_count = _replace_page_range(doc, start, count, raw)
+            delta = new_count - count
+            if delta:
+                shifts.append({"at": start + count, "delta": delta})
+            updated.append({"start": start, "kind": spec["kind"], "count": new_count})
+        return shifts, updated
+
+    def refresh_sheets(self, specs: list[dict], symbols: list) -> dict:
+        if self.doc is None or self.data is None:
+            raise ValueError("No PDF is open")
+        if not specs:
+            raise ValueError("There are no legend, counts, or schedule sheets to refresh")
+        with _FITZ:
+            shifts, updated = self._rewrite_sheets(self.doc, specs, symbols)
+            self.data = self.doc.tobytes(deflate=True, garbage=4)
+            self.cache.clear()
+            warning = _keep_sheets(self.doc_id, self.data)
+        info = self.info()
+        info["shifts"] = shifts
+        info["updated"] = updated
+        if warning:
+            info["sheetsWarning"] = warning
+        return info
+
+    def delete_sheet(self, index: int, base: int) -> dict:
+        if self.doc is None or self.data is None:
+            raise ValueError("No PDF is open")
+        if self.doc.page_count < 2:
+            raise ValueError("The plan needs at least one sheet")
+        if index < base:
+            raise ValueError("That sheet is part of the original plan")
+        if index < 0 or index >= self.doc.page_count:
+            raise ValueError("Page out of range")
+        with _FITZ:
+            self.doc.delete_page(index)
+            self.data = self.doc.tobytes(deflate=True, garbage=4)
+            self.cache.clear()
+            warning = _keep_sheets(self.doc_id, self.data)
+        info = self.info()
+        if warning:
+            info["sheetsWarning"] = warning
+        return info
+
     def export(
         self,
         placements,
@@ -491,16 +679,29 @@ class Session:
         show_circuits=False,
         revise=False,
         project=None,
+        sheets=None,
     ) -> tuple[bytes, str]:
         if self.data is None or self.doc is None:
             raise ValueError("No PDF is open")
         if revise:
             project = _revision_project(project)
+        pdf_bytes = self.data
+        page_count = self.doc.page_count
+        if sheets:
+            with _FITZ:
+                copy = pymupdf.open(stream=self.data, filetype="pdf")
+                try:
+                    shifts, _updated = self._rewrite_sheets(copy, sheets, list(symbols_by_id.values()))
+                    placements = _shift_pages(placements, shifts)
+                    page_count = copy.page_count
+                    pdf_bytes = copy.tobytes(deflate=True, garbage=4)
+                finally:
+                    copy.close()
         run_ids = {sid for sid, sym in symbols_by_id.items() if sym.get("place") == "run"}
-        parsed = parse_placements(placements, self.doc.page_count, set(symbols_by_id), run_ids)
+        parsed = parse_placements(placements, page_count, set(symbols_by_id), run_ids)
         with _FITZ:
             pdf = export_pdf(
-                self.data,
+                pdf_bytes,
                 parsed,
                 symbols_by_id,
                 ocg=ocg,
@@ -537,6 +738,7 @@ class App:
                     "runLabel": item.get("runLabel") or "",
                     "keywords": item["keywords"],
                     "hint": item["hint"],
+                    "legend": item.get("legend") or item["hint"],
                     "defaultColor": item["defaultColor"],
                     "svg": item["svg"],
                 }
@@ -650,10 +852,7 @@ def _make_handler(app: App):
                 except ValueError as exc:
                     self._json(400, {"error": str(exc)})
                     return
-                if data is None:
-                    self._json(404, {"error": "No recovery file"})
-                    return
-                self._json(200, data)
+                self._json(200, data or {})
                 return
             if path == "/api/sample.pdf":
                 data = app.sample()
@@ -764,6 +963,30 @@ def _make_handler(app: App):
                     return
                 self._json(200, {"ok": True})
                 return
+            if path == "/api/sheets/refresh":
+                try:
+                    payload = json.loads(body.decode("utf-8") or "{}")
+                    if not isinstance(payload, dict):
+                        raise ValueError("refresh must be an object")
+                    info = app.session.refresh_sheets(_sheet_specs(payload.get("sheets")), app.library["symbols"])
+                except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+                print(f"refreshed sheets ({info['pageCount']} sheets)")
+                self._json(200, info)
+                return
+            if path == "/api/sheets/delete":
+                try:
+                    payload = json.loads(body.decode("utf-8") or "{}")
+                    if not isinstance(payload, dict):
+                        raise ValueError("delete must be an object")
+                    info = app.session.delete_sheet(int(payload.get("index")), int(payload.get("base") or 0))
+                except (ValueError, json.JSONDecodeError, UnicodeDecodeError, TypeError) as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+                print(f"deleted a sheet ({info['pageCount']} sheets)")
+                self._json(200, info)
+                return
             if path == "/api/recover":
                 try:
                     payload = json.loads(body.decode("utf-8") or "{}")
@@ -787,6 +1010,7 @@ def _make_handler(app: App):
                         show_circuits=payload.get("showCircuits") is True,
                         revise=revise,
                         project=payload.get("project") if revise else None,
+                        sheets=_sheet_specs(payload.get("sheets")),
                     )
                 except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                     self._json(400, {"error": str(exc)})
