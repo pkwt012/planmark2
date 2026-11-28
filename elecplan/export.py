@@ -88,6 +88,52 @@ def clean_amps(value) -> str | None:
     return text
 
 
+def takes_height(sym: dict) -> bool:
+    """Every point symbol can carry a height. Runs do not."""
+    return bool(sym) and sym.get("place") != "run"
+
+
+def takes_amps(sym: dict) -> bool:
+    """Ampacity stays on appliances, a television, and a countertop receptacle."""
+    if not sym:
+        return False
+    return sym.get("category") == "equipment" or sym.get("id") in ("popup", "tv")
+
+
+def _placement_note(sym: dict, item: dict) -> str:
+    parts = []
+    if takes_height(sym) and item.get("height"):
+        parts.append(str(item["height"]))
+    if takes_amps(sym) and item.get("amps"):
+        parts.append(str(item["amps"]))
+    return " ".join(parts)
+
+
+def _text_bearing(sym: dict) -> bool:
+    """Letter symbols stay readable. Outlet slots and light beams keep their aim."""
+    if not sym or sym.get("id") == "camera":
+        return False
+    return sym.get("category") in ("switches", "safety", "lowvoltage", "equipment")
+
+
+def shown_rotation(sym: dict, rotation) -> float:
+    """Text-bearing symbols stay between -90 and 90 degrees. -90 draws the same as 270."""
+    deg = float(rotation or 0) % 360
+    if deg < 0:
+        deg += 360
+    if deg < 0.05 or deg > 359.95:
+        deg = 0.0
+    if not _text_bearing(sym):
+        return deg
+    if 90 < deg < 270:
+        deg = (deg + 180) % 360
+    if deg > 180:
+        deg -= 360
+    if abs(deg) < 0.05:
+        return 0.0
+    return deg
+
+
 def _height_rank(height: str) -> tuple:
     """Blank first, then by the leading number, so 18\" sits before 48\"."""
     if not height:
@@ -165,7 +211,10 @@ def parse_placements(raw, page_count: int, symbol_ids: set[str], run_ids: set[st
                 _finite(x, y, width)
                 if not 40 <= width <= 2000:
                     raise ValueError("legend width must be between 40 and 2000 points")
-                out.append({"kind": "legend", "page": page, "x": x, "y": y, "width": width, **extra})
+                legend_mark = {"kind": "legend", "page": page, "x": x, "y": y, "width": width, **extra}
+                if item.get("sheetOnly") is True:
+                    legend_mark["sheetOnly"] = True
+                out.append(legend_mark)
                 continue
             if kind == "note":
                 page = _page_index(item, page_count)
@@ -676,20 +725,20 @@ def _erase_under_whiteboxes(doc: pymupdf.Document, boxes: list[dict]) -> None:
         )
 
 
-def _draw_height_tag(page, x: float, y: float, size: float, text: str, oc: int = 0) -> None:
-    """A short note under a symbol, such as an outlet height or an equipment ampacity. It stays upright when the symbol rotates."""
+def _draw_height_tag(page, x: float, y: float, size: float, text: str, oc: int = 0, stack: int = 0) -> None:
+    """A short note beside a symbol. Regular weight, smaller than the symbol letter, clear of the run label."""
     label = str(text or "").strip()
     if not label:
         return
-    font_size = max(7.0, min(12.0, float(size) * 0.34))
-    width = pymupdf.get_text_length(label, fontname="hebo", fontsize=font_size)
-    font = pymupdf.Font("hebo")
+    font_size = max(4.5, min(6.0, float(size) * 0.18))
+    width = pymupdf.get_text_length(label, fontname="helv", fontsize=font_size)
+    font = pymupdf.Font("helv")
     ascent = font.ascender * font_size
     descent = -font.descender * font_size
-    left = x - width / 2 - 1.5
-    top = y + size / 2 + 1.5
-    box_w = width + 3.0
-    box_h = ascent + descent + 1.2
+    left = x + size / 2 + 2.0
+    top = y - size * 0.05 + stack * (font_size + 1.6)
+    box_w = width + 2.4
+    box_h = ascent + descent + 1.0
     matrix = page.derotation_matrix
 
     def pt(px: float, py: float) -> pymupdf.Point:
@@ -708,7 +757,7 @@ def _draw_height_tag(page, x: float, y: float, size: float, text: str, oc: int =
         pt(left + 1.5, top + ascent + 0.4),
         label,
         fontsize=font_size,
-        fontname="hebo",
+        fontname="helv",
         color=(0.08, 0.08, 0.08),
         rotate=int(page.rotation) % 360,
         overlay=True,
@@ -752,12 +801,12 @@ def _stamp_legend(page, item: dict, src: pymupdf.Document, nat_w: float, nat_h: 
     )
 
 
-def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str]) -> list[dict]:
+def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str], page=None) -> list[dict]:
     """Symbols placed on a visible layer, in catalog order.
 
     A hidden layer stays off the key. One placement is enough, including a run.
-    An outlet height or an equipment ampacity gets its own row. Notes, arrows, dashed lines, legends,
-    and white boxes are not symbols.
+    A height or an ampacity gets its own row. Pass page to keep the key on one sheet.
+    Notes, arrows, dashed lines, legends, and white boxes are not symbols.
     """
     used: dict[str, set[str]] = {}
     for item in placements:
@@ -767,15 +816,12 @@ def _legend_symbols(symbols_by_id: dict, placements: list[dict], hidden: set[str
         sid = item.get("symbolId")
         if not sid or sid not in symbols_by_id:
             continue
+        if page is not None and item.get("page") != page:
+            continue
         if (item.get("layer") or "Power") in hidden:
             continue
-        note = ""
         sym = symbols_by_id[sid]
-        if sym.get("category") == "receptacles" and item.get("height"):
-            note = str(item["height"])
-        elif sym.get("category") == "equipment" and item.get("amps"):
-            note = str(item["amps"])
-        used.setdefault(sid, set()).add(note)
+        used.setdefault(sid, set()).add(_placement_note(sym, item))
     entries = []
     for sid, sym in symbols_by_id.items():
         if sid not in used:
@@ -816,8 +862,7 @@ def export_pdf(
     hidden = set(hidden_layers or [])
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     cache: dict[tuple, pymupdf.Document] = {}
-    legend_doc: pymupdf.Document | None = None
-    legend_size: tuple[float, float] | None = None
+    legend_cache: dict[object, tuple] = {}
     groups: dict[str, int] = {}
     try:
         if ocg:
@@ -893,16 +938,21 @@ def export_pdf(
                     )
                 continue
             if kind == "legend":
-                if legend_doc is None:
-                    from elecplan.legend import build_legend_block
+                from elecplan.legend import build_legend_block
 
-                    raw, nat_w, nat_h = build_legend_block(_legend_symbols(symbols_by_id, placements, hidden))
-                    legend_doc = pymupdf.open(stream=raw, filetype="pdf")
-                    legend_size = (nat_w, nat_h)
-                assert legend_size is not None
-                _stamp_legend(page, item, legend_doc, legend_size[0], legend_size[1], oc)
+                page_key = item["page"] if item.get("sheetOnly") is True else None
+                cached = legend_cache.get(page_key)
+                if cached is None:
+                    raw, nat_w, nat_h = build_legend_block(
+                        _legend_symbols(symbols_by_id, placements, hidden, page_key)
+                    )
+                    cached = (pymupdf.open(stream=raw, filetype="pdf"), nat_w, nat_h)
+                    legend_cache[page_key] = cached
+                legend_doc, nat_w, nat_h = cached
+                _stamp_legend(page, item, legend_doc, nat_w, nat_h, oc)
                 continue
-            baked = _baked_rotation(item["rotation"], page.rotation)
+            sym = symbols_by_id[item["symbolId"]]
+            baked = _baked_rotation(shown_rotation(sym, item["rotation"]), page.rotation)
             key = (item["symbolId"], round(baked, 1), item["color"])
             src = cache.get(key)
             if src is None:
@@ -922,11 +972,12 @@ def export_pdf(
             # The spin itself was baked with the page rotation removed.
             rect = rect * page.derotation_matrix
             page.show_pdf_page(rect, src, 0, overlay=True, keep_proportion=True, oc=oc)
-            sym = symbols_by_id[item["symbolId"]]
-            if item.get("height") and sym.get("category") == "receptacles":
-                _draw_height_tag(page, x, y, size, item["height"], oc)
-            if item.get("amps") and sym.get("category") == "equipment":
-                _draw_height_tag(page, x, y, size, item["amps"], oc)
+            stack = 0
+            if item.get("height") and takes_height(sym):
+                _draw_height_tag(page, x, y, size, item["height"], oc, stack)
+                stack += 1
+            if item.get("amps") and takes_amps(sym):
+                _draw_height_tag(page, x, y, size, item["amps"], oc, stack)
             if show_circuits and item.get("circuit"):
                 _draw_circuit_tag(page, x + size / 2 + 2, y - size / 2 + 7, item["circuit"], oc)
         if revise:
@@ -944,10 +995,10 @@ def export_pdf(
                 filename=REVISE_SOURCE,
                 desc="Unmarked plan",
             )
-        return doc.tobytes(deflate=True, garbage=3)
+        return doc.tobytes(deflate=True, garbage=4)
     finally:
         for src in cache.values():
             src.close()
-        if legend_doc is not None:
+        for legend_doc, _nat_w, _nat_h in legend_cache.values():
             legend_doc.close()
         doc.close()

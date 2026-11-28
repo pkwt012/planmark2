@@ -57,6 +57,8 @@ function projectData() {
     placements: state.placements,
     hiddenLayers: [...state.hiddenLayers],
     showCircuits: state.showCircuits,
+    basePageCount: state.basePageCount,
+    generatedSheets: state.generatedSheets,
   };
 }
 
@@ -309,7 +311,7 @@ function applyProject(proj, { quiet = false } = {}) {
         skipped += 1;
         continue;
       }
-      placements.push({
+      const legend = {
         id: item.id || uid(),
         kind: "legend",
         page,
@@ -317,7 +319,9 @@ function applyProject(proj, { quiet = false } = {}) {
         y,
         width: clamp(width, 40, 2000),
         layer: normalizeLayer(item.layer, "Power"),
-      });
+      };
+      if (item.sheetOnly === true) legend.sheetOnly = true;
+      placements.push(legend);
       continue;
     }
     if (!symbolsById[item.symbolId] || symbolsById[item.symbolId].place === "run") {
@@ -363,6 +367,27 @@ function applyProject(proj, { quiet = false } = {}) {
     state.hiddenLayers = new Set();
   }
   state.showCircuits = proj.showCircuits === true;
+  const savedBase = Number(proj.basePageCount);
+  if (Number.isInteger(savedBase) && savedBase >= 0 && savedBase <= state.doc.pageCount) {
+    state.basePageCount = savedBase;
+  }
+  if (Array.isArray(proj.generatedSheets)) {
+    state.generatedSheets = proj.generatedSheets.filter((sheet) => {
+      if (!sheet || typeof sheet !== "object") return false;
+      const start = Number(sheet.start);
+      const count = Number(sheet.count);
+      const kind = sheet.kind;
+      if (!Number.isInteger(start) || !Number.isInteger(count) || count < 1) return false;
+      if (start < 0 || start >= state.doc.pageCount) return false;
+      return kind === "legend" || kind === "counts" || kind === "schedule" || kind === "pdf";
+    }).map((sheet) => ({
+      kind: sheet.kind,
+      start: Number(sheet.start),
+      count: Math.min(Number(sheet.count), state.doc.pageCount - Number(sheet.start)),
+      scope: sheet.scope === "sheet" ? "sheet" : "all",
+      sourcePage: Number.isInteger(Number(sheet.sourcePage)) ? Number(sheet.sourcePage) : 0,
+    }));
+  }
   sanitizeAnchors();
   if (proj.defaultSize) state.defaultSize = clamp(Number(proj.defaultSize) || 28, 10, 160);
   state.calibration = proj.calibration || null;

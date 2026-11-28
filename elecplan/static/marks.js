@@ -26,7 +26,7 @@ function paintSvg(symbolId, rotation, color) {
   const doc = new DOMParser().parseFromString(colored, "image/svg+xml");
   const node = doc.querySelector("svg");
   if (!node || doc.querySelector("parsererror")) return null;
-  setSpin(node, rotation);
+  setSpin(node, shownRotation(symbolId, rotation));
   return node;
 }
 
@@ -38,7 +38,7 @@ function positionMark(el, p) {
 }
 
 function positionHandle(handle, p) {
-  const rad = ((p.rotation + 90) * Math.PI) / 180;
+  const rad = ((shownRotation(p.symbolId, p.rotation) + 90) * Math.PI) / 180;
   const dist = p.size / 2 + 18 / state.zoom;
   handle.style.left = p.size / 2 + Math.cos(rad) * dist + "px";
   handle.style.top = p.size / 2 + Math.sin(rad) * dist + "px";
@@ -65,11 +65,21 @@ function markElement(p) {
   hit.style.left = hitInset + "%";
   hit.style.top = hitInset + "%";
   el.appendChild(hit);
+  const placeSideTag = (tag, stack) => {
+    const fontSize = Math.max(4.5, Math.min(6, (Number(p.size) || 28) * 0.18));
+    tag.style.left = "calc(100% + 2px)";
+    tag.style.top = ((Number(p.size) || 28) * 0.45 + stack * (fontSize + 1.6)) + "px";
+    tag.style.fontSize = fontSize + "px";
+    tag.style.fontWeight = "400";
+  };
+  let noteStack = 0;
   const height = takesHeight(p.symbolId) ? cleanHeight(p.height, true) : "";
   if (height) {
     const tag = document.createElement("div");
     tag.className = "height-tag";
     tag.textContent = height;
+    placeSideTag(tag, noteStack);
+    noteStack += 1;
     el.appendChild(tag);
   }
   const amps = takesAmps(p.symbolId) ? cleanAmps(p.amps, true) : "";
@@ -77,6 +87,7 @@ function markElement(p) {
     const tag = document.createElement("div");
     tag.className = "amps-tag";
     tag.textContent = amps;
+    placeSideTag(tag, noteStack);
     el.appendChild(tag);
   }
   if (state.showCircuits && p.circuit) {
@@ -139,12 +150,24 @@ function isWhitebox(p) {
 
 function symbolLayerName(sym) {
   if (!sym) return "Power";
+  if (sym.id === "smoke" || sym.id === "smokeco") return "Lighting";
   if (sym.category === "lighting" || sym.category === "switches") return "Lighting";
   if (sym.category === "lowvoltage" || sym.category === "safety") return "Low-volt";
   return "Power";
 }
 
+function currentLayer() {
+  const names = layerNames();
+  const visible = names.filter((name) => !state.hiddenLayers.has(name));
+  if (visible.length === 1) return visible[0];
+  if (state.activeLayer && names.includes(state.activeLayer)) return state.activeLayer;
+  const mark = selected();
+  if (mark && mark.layer && names.includes(mark.layer)) return mark.layer;
+  return "Power";
+}
+
 function defaultLayer(kind, symbolId, guide) {
+  if (kind === "note") return currentLayer();
   if (kind === "symbol" || kind === "run") return symbolLayerName(symbolsById[symbolId]);
   if (kind === "line") return guide ? "Lighting" : "Circuitry";
   return "Power";
@@ -173,12 +196,37 @@ function cleanCircuit(value) {
 
 function takesHeight(symbolId) {
   const sym = symbolsById[symbolId];
-  return Boolean(sym && sym.category === "receptacles");
+  return Boolean(sym && sym.place !== "run");
 }
 
 function takesAmps(symbolId) {
   const sym = symbolsById[symbolId];
-  return Boolean(sym && sym.category === "equipment");
+  if (!sym) return false;
+  return sym.category === "equipment" || sym.id === "popup" || sym.id === "tv";
+}
+
+function textBearingSymbol(sym) {
+  if (!sym || sym.id === "camera") return false;
+  return sym.category === "switches" || sym.category === "safety" || sym.category === "lowvoltage" || sym.category === "equipment";
+}
+
+function readableTextRotation(deg) {
+  let d = normRot(deg);
+  if (d > 90 && d < 270) d = normRot(d + 180);
+  if (d > 180) d -= 360;
+  return d;
+}
+
+function shownRotation(symbolId, rotation) {
+  const sym = symbolsById[symbolId];
+  if (!textBearingSymbol(sym)) return Number(rotation) || 0;
+  return readableTextRotation(rotation);
+}
+
+function storeRotation(symbolId, deg) {
+  const sym = symbolsById[symbolId];
+  if (textBearingSymbol(sym)) return readableTextRotation(deg);
+  return normRot(deg);
 }
 
 function cleanAmps(value, quoteNumbers) {
@@ -199,9 +247,16 @@ function cleanAmps(value, quoteNumbers) {
 
 function markNote(item) {
   if (!item) return "";
-  if (takesHeight(item.symbolId)) return cleanHeight(item.height, true);
-  if (takesAmps(item.symbolId)) return cleanAmps(item.amps, true);
-  return "";
+  const parts = [];
+  if (takesHeight(item.symbolId)) {
+    const height = cleanHeight(item.height, true);
+    if (height) parts.push(height);
+  }
+  if (takesAmps(item.symbolId)) {
+    const amps = cleanAmps(item.amps, true);
+    if (amps) parts.push(amps);
+  }
+  return parts.join(" ");
 }
 
 function cleanHeight(value, quoteNumbers) {
@@ -385,7 +440,10 @@ function layoutLegend(symbols) {
   const nameW = slack + Math.max(...symbols.map((sym) => measureText(sym.name, nameSize)));
   const colW = symSize + gap + nameW;
   const count = symbols.length;
-  let cols = count >= 6 && colW * 3 + gutter * 2 + pad * 2 <= 680 ? 3 : 2;
+  let cols = 1;
+  if (count >= 12 && colW * 4 + gutter * 3 + pad * 2 <= 920) cols = 4;
+  else if (count >= 6 && colW * 3 + gutter * 2 + pad * 2 <= 760) cols = 3;
+  else if (count >= 2) cols = 2;
   cols = Math.max(1, Math.min(cols, count));
   const rows = Math.ceil(count / cols);
   const width = pad * 2 + cols * colW + (cols - 1) * gutter;
@@ -421,9 +479,10 @@ function layoutLegend(symbols) {
   };
 }
 
-function usedLegendSymbols() {
+function usedLegendSymbols(pageIndex) {
   const used = new Map();
   for (const item of state.placements) {
+    if (pageIndex != null && item.page !== pageIndex) continue;
     if (!layerVisible(item)) continue;
     if (!(isSymbol(item) || item.kind === "run") || !item.symbolId) continue;
     if (!symbolsById[item.symbolId]) continue;
@@ -445,24 +504,40 @@ function usedLegendSymbols() {
   return entries;
 }
 
-function visibleLegendLayout() {
+function legendSheetOnly(mark) {
+  if (mark) return mark.sheetOnly === true;
+  const box = $("legendSheetOnly");
+  return !box || box.checked;
+}
+
+function legendSymbols(mark) {
+  const page = legendSheetOnly(mark) ? (mark ? mark.page : state.pageIndex) : null;
+  return usedLegendSymbols(page);
+}
+
+function visibleLegendLayout(mark) {
+  if (!library || !Array.isArray(library.symbols)) return null;
+  return layoutLegend(legendSymbols(mark));
+}
+
+function visibleLegendLayoutAll() {
   if (!library || !Array.isArray(library.symbols)) return null;
   return layoutLegend(usedLegendSymbols());
 }
 
-function legendBox(width) {
-  const lay = visibleLegendLayout();
+function legendBox(width, mark) {
+  const lay = visibleLegendLayout(mark);
   if (!lay || !lay.width) return { width: width || 360, height: 240, scale: 1 };
   const scale = (width || lay.width) / lay.width;
   return { width: lay.width * scale, height: lay.height * scale, scale };
 }
 
 function legendElement(p) {
-  const lay = visibleLegendLayout();
+  const lay = visibleLegendLayout(p);
   const el = document.createElement("div");
   el.className = "mark legend" + (p.id === state.selectedId ? " selected" : "");
   el.dataset.id = p.id;
-  const box = legendBox(p.width);
+  const box = legendBox(p.width, p);
   el.style.width = box.width + "px";
   el.style.height = box.height + "px";
   el.style.left = p.x + "px";
@@ -916,7 +991,7 @@ function updateLegend(p) {
     renderMarks();
     return;
   }
-  const box = legendBox(p.width);
+  const box = legendBox(p.width, p);
   el.style.width = box.width + "px";
   el.style.height = box.height + "px";
   el.style.left = p.x + "px";
@@ -1066,12 +1141,12 @@ function updateMark(p) {
   }
   positionMark(el, p);
   const svg = el.querySelector("svg");
-  if (svg) setSpin(svg, p.rotation);
+  if (svg) setSpin(svg, shownRotation(p.symbolId, p.rotation));
   const handle = el.querySelector(".handle");
   if (handle) positionHandle(handle, p);
   const rotInput = $("rotInput");
   if (rotInput && document.activeElement !== rotInput && p.id === state.selectedId) {
-    rotInput.value = String(Math.round(p.rotation));
+    rotInput.value = String(Math.round(shownRotation(p.symbolId, p.rotation)));
   }
 }
 
