@@ -67,15 +67,15 @@ jobs:
           path: PlanMarks-Windows.zip
 
       - name: Publish the download
-        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.8')) }}"
+        if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Plan Marks 2.9')) }}"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8
-          name: Plan Marks 2.8
+          tag_name: v2.9
+          name: Plan Marks 2.9
           make_latest: "true"
           files: PlanMarks-Windows.zip
           body: |
-            Plan Marks 2.8. Unzip the folder, then double-click PlanMarks.exe.
+            Plan Marks 2.9. Unzip the folder, then double-click PlanMarks.exe.
             Leave the small Plan Marks window open while you work. Close it to quit.
             Keep PlanMarks.exe and the _internal folder together.
             Your PDFs stay on this computer.
@@ -86,6 +86,7 @@ jobs:
             A countertop receptacle, a television, or an appliance can take an ampacity. A plain number is amps, so 30 becomes 30A. Type the whole rating when it is more than a number, such as 40A 240V. It prints beside the symbol. A new mark starts blank.
             Letters on a switch, a detector, or equipment stay right-side up.
             Most used, at the top of the list, shows the six symbols placed most often on the plan. List, next to the filter, shows one symbol per row.
+            Counts starts closed under the symbols. Open it when you want the list. The selected mark keeps Circuit, Height, and Amps in view.
             Snap pulls a light onto a plan line. An outlet or a switch sits on the open side of the wall. Outlet lines run out from the wall. A switch turns to follow the wall. A switch group follows the first switch, including at a corner.
             A dashed line continues from click to click. Enter, Esc, or a double-click finishes the chain.
             The symbol list adds a wall oven, cooktop, dishwasher, microwave, refrigerator, washer, dryer, television, heat detector, disconnect, and a smoke/CO detector, plus step, art, shop, vanity, and chandelier lights, 4 in and 6 in cans, sensor and fan controls, 20A and half-hot outlets, generator inlets, and equipment such as pumps, a hardwired EV charger, transfer switches, a subpanel, a junction box, and a gate.

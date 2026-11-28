@@ -192,15 +192,19 @@
         <button type="button" id="listViewBtn" aria-pressed="false" title="One symbol per row. Click again for tiles.">List</button>
       </div>
       <div id="palette"></div>
-      <div id="countsSplit" class="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the counts list" tabindex="0"></div>
-      <div id="countsPanel" class="counts">
-        <div class="counts-head">Counts</div>
-        <div class="counts-scope" role="radiogroup" aria-label="Which sheets to count">
-          <label><input type="radio" name="countScope" value="sheet" checked> This sheet</label>
-          <label><input type="radio" name="countScope" value="all"> All sheets</label>
+      <div id="countsSplit" class="splitter" hidden role="separator" aria-orientation="horizontal" aria-label="Resize the counts list" tabindex="0"></div>
+      <div id="countsPanel" class="counts collapsed">
+        <button type="button" id="countsToggle" class="counts-head" aria-expanded="false" aria-controls="countsBody" title="Show or hide the counts list">
+          <span class="chev" aria-hidden="true"></span> Counts
+        </button>
+        <div id="countsBody" hidden>
+          <div class="counts-scope" role="radiogroup" aria-label="Which sheets to count">
+            <label><input type="radio" name="countScope" value="sheet" checked> This sheet</label>
+            <label><input type="radio" name="countScope" value="all"> All sheets</label>
+          </div>
+          <ul id="countsList"></ul>
+          <p id="countsEmpty" class="hint">No symbols yet.</p>
         </div>
-        <ul id="countsList"></ul>
-        <p id="countsEmpty" class="hint">No symbols yet.</p>
       </div>
       <div id="selectionBox" class="mark-card" hidden>
         <div class="mark-card-title">Selected mark</div>
@@ -315,7 +319,7 @@
       <li>Select a symbol and type a height, such as 48 or 18. A plain number is inches. It prints beside the symbol in regular type, smaller than the lettering, so it stays off a run label. Counts and the legend list each height on its own. Clear the field to leave the height off. Every new mark starts blank.</li>
       <li>Select a countertop receptacle, a television, or an appliance such as a furnace, a well, a sump, or an air conditioner, and type an ampacity, such as 30 or 40A 240V. A plain number is amps. It prints beside the symbol, the same way a 30A outlet shows its rating. Counts and the legend list each rating on its own. Clear the field to leave it off. A new mark starts blank.</li>
       <li>Apply size to all copies the selected symbol’s size onto the other marks of that type. This sheet only is the usual choice. All sheets covers the whole plan.</li>
-      <li>Counts lists each symbol that is on the plan. The list sits under the symbols, and the divider above it shows the full list. Add counts sheet puts that list on a new page.</li>
+      <li>Counts lists each symbol that is on the plan. It starts closed under the symbols. Open it to see the list, and drag the divider above it to show more. That choice is remembered. Add counts sheet puts that list on a new page.</li>
       <li>Drop legend places a key in the largest empty area. This sheet only is checked by default, so the key lists symbols on that sheet. Uncheck it to list every sheet. Several symbols wrap into columns. Drag the key if you want it somewhere else. The key follows those symbols as you add or delete them. A hidden layer stays off it. The descriptions say what the symbol is, such as Duplex receptacle or GFCI receptacle 20A.</li>
       <li>Legend on the Sheets tab adds a sheet of those same symbols, with the name and a short description. Refresh sheets rebuilds the legend, the counts, and the schedule from the marks. Delete sheet removes an added sheet. A plan page stays.</li>
       <li>Calibrate on a known dimension (the sample has a 10 ft line) so size can be read in feet.</li>

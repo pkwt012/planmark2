@@ -421,7 +421,8 @@ body.row-resize, body.row-resize * { cursor: row-resize !important; }
 body.col-resize, body.col-resize * { cursor: col-resize !important; }
 
 .mark-card {
-  flex: 1 1 120px;
+  /* Never squeezed by the palette or counts. Taller than max-height scrolls. */
+  flex: 0 0 auto;
   min-height: 0;
   border-top: 1px solid var(--line);
   padding: 6px 10px 8px;
@@ -465,24 +466,48 @@ body.col-resize, body.col-resize * { cursor: col-resize !important; }
 .size-controls .presets { width: 280px; }
 .layer-tip { width: 440px; max-width: 100%; }
 #countsPanel {
+  /* Collapsed by default so the selected-mark fields keep the room. */
   flex: 0 0 auto;
-  height: var(--counts-height, 220px);
-  min-height: 120px;
   display: flex;
   flex-direction: column;
   margin: 0;
   border-top: 1px solid var(--line);
-  padding: 6px 10px 8px;
+  padding: 4px 10px 6px;
   background: #15181e;
   overflow: hidden;
 }
+#countsPanel:not(.collapsed) {
+  flex: 0 1 var(--counts-height, 220px);
+  min-height: 60px;
+}
+#countsBody { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+#countsBody[hidden], #countsSplit[hidden] { display: none; }
+#countsList { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .counts-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
 }
+.counts-head:hover { color: var(--text); background: none; }
+.counts-head .chev {
+  width: 0;
+  height: 0;
+  border: 4px solid transparent;
+  border-left-color: currentColor;
+  transition: transform 0.12s;
+}
+.counts-head[aria-expanded="true"] .chev { transform: rotate(90deg); }
 #countsPanel .counts-scope { margin: 4px 0 0; }
 #countsEmpty { margin: 4px 0 0; }
 .ribbon-caption { text-align: center; }

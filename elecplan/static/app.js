@@ -835,9 +835,10 @@ function bind() {
   }
   $("countsSheetBtn").addEventListener("click", () => addCountsSheet());
   $("scheduleBtn").addEventListener("click", () => addScheduleSheet());
-  if ($("countsPanel").tagName === "DETAILS") {
-    $("countsPanel").addEventListener("toggle", () => saveLayout());
-  }
+  $("countsToggle").addEventListener("click", () => {
+    setCountsOpen($("countsPanel").classList.contains("collapsed"));
+    saveLayout();
+  });
   $("sizeOneFoot").addEventListener("click", () => {
     if (!state.calibration) return;
     const raw = state.calibration.pointsPerFoot;
@@ -1003,13 +1004,19 @@ function syncSheetCommands() {
   del.disabled = !open || state.pageIndex < state.basePageCount || state.doc.pageCount < 2;
 }
 
+function setCountsOpen(open) {
+  $("countsPanel").classList.toggle("collapsed", !open);
+  $("countsToggle").setAttribute("aria-expanded", open ? "true" : "false");
+  $("countsBody").hidden = !open;
+  $("countsSplit").hidden = !open;
+}
+
 function loadLayout() {
   try {
     const data = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
     if (Array.isArray(data.open)) openCategories = new Set(data.open.filter((id) => typeof id === "string"));
-    if ($("countsPanel").tagName === "DETAILS" && typeof data.countsOpen === "boolean") {
-      $("countsPanel").open = data.countsOpen;
-    }
+    // New key: older saves wrote countsOpen: true, which would reopen the panel for everyone.
+    setCountsOpen(data.countsShown === true);
     if (data.sideWidth) setLen("--side-width", data.sideWidth, 220, 560);
     if (data.toolsHeight) setLen("--tools-height", data.toolsHeight, 140, 720);
     if (data.toolsWidth) setLen("--tools-width", data.toolsWidth, 180, 480);
@@ -1029,7 +1036,7 @@ function saveLayout() {
     sideWidth: readLen("--side-width", 300),
     toolsHeight: readLen("--tools-height", 340),
     toolsWidth: readLen("--tools-width", 260),
-    countsOpen: $("countsPanel").tagName === "DETAILS" ? $("countsPanel").open : true,
+    countsShown: !$("countsPanel").classList.contains("collapsed"),
     snap: state.snap,
     exportAllLayers: state.exportAllLayers,
     listView: Boolean(state.paletteList),
